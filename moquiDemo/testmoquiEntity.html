@@ -1,0 +1,51 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN" "http://www.w3.org/TR/html4/loose.dtd">
+<html>
+<head>
+    <title>my  test</title>
+    <meta charset="utf8"/>
+    <link rel="stylesheet" type="text/css" href="../dist/joint.css" />
+    <script src="../lib/jquery.js"></script>
+    <script src="../dist/joint.all.min.js"></script>
+<!--    <script src="../plugins/moqui/joint.shapes.moqui.js"></script>-->
+    <style>
+        #paper {
+            display: inline-block;
+            border: 1px solid gray;
+        }
+
+        /* Experimental CSS animation of link connection paths stroke. */
+        .connection {
+            /*
+            -webkit-animation: draw 3s infinite;
+           -moz-animation: draw 3s infinite;
+           animation: draw  3s infinite;
+
+           stroke-dashoffset: 1;
+           stroke-dasharray: 8 4;
+            */
+   }
+
+
+</style>
+</head>
+<body>
+<input type="button" value="clickMe" name="printLayout" onclick="print()"/>
+<div id="paper"></div>
+
+<script src="./initPage.js"></script>
+<script language="JavaScript">
+
+    //从服务端获取模型解析展现
+    //renderModelsFromServer("data/exampleItemDefinition.json") ;
+    //从服务端获取模型JSON配置进行展现
+    renderPageJSONFromServer("data/demoLayout.json");
+
+    function print(){
+        console.log(JSON.stringify(graph.toJSON()));
+    }
+
+
+
+</script>
+</body>
+</html>

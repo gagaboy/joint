@@ -1,0 +1,349 @@
+{
+    "entities": {
+        "entity": [
+            {
+                "entity-name": "DsopSupplier",
+                "package-name": "dsop.party",
+                "description": "gongyings",
+                "field": [
+                    {
+                        "name": "supplierPartyId",
+                        "type": "id",
+                        "is-pk": "true"
+                    },
+                    {
+                        "name": "ownerPartyId",
+                        "type": "id"
+                    },
+                    {
+                        "name": "supplierName",
+                        "type": "text-medium"
+                    },
+                    {
+                        "name": "supplierShortName",
+                        "type": "text-medium"
+                    },
+                    {
+                        "name": "supplierCode",
+                        "type": "id",
+                        "description": "\u4f9b\u5e94\u5546\u7f16\u53f7"
+                    },
+                    {
+                        "name": "officeSiteName",
+                        "type": "text-medium",
+                        "description": "\u5b98\u65b9\u7ad9\u70b9"
+                    }
+                ]
+            },
+            {
+                "entity-name": "Example",
+                "package-name": "moqui.example",
+                "short-alias": "examples",
+                "allow-user-field": "true",
+                "field": [
+                    {
+                        "name": "exampleId",
+                        "type": "id",
+                        "is-pk": "true",
+                        "description": "primary sequenced ID"
+                    },
+                    {
+                        "name": "exampleTypeEnumId",
+                        "type": "id"
+                    },
+                    {
+                        "name": "statusId",
+                        "type": "id",
+                        "enable-audit-log": "true"
+                    },
+                    {
+                        "name": "exampleName",
+                        "type": "text-medium"
+                    },
+                    {
+                        "name": "description",
+                        "type": "text-medium"
+                    },
+                    {
+                        "name": "longDescription",
+                        "type": "text-very-long"
+                    },
+                    {
+                        "name": "comments",
+                        "type": "text-long"
+                    },
+                    {
+                        "name": "exampleSize",
+                        "type": "number-integer"
+                    },
+                    {
+                        "name": "exampleDate",
+                        "type": "date-time"
+                    },
+                    {
+                        "name": "testDate",
+                        "type": "date"
+                    },
+                    {
+                        "name": "testTime",
+                        "type": "time"
+                    }
+                ],
+                "relationship": [
+                    {
+                        "type": "one",
+                        "title": "ExampleType",
+                        "related-entity-name": "moqui.basic.Enumeration",
+                        "description": "Example Type",
+                        "key-map": [
+                            {
+                                "field-name": "exampleTypeEnumId"
+                            }
+                        ]
+                    },
+                    {
+                        "type": "one",
+                        "title": "Example",
+                        "related-entity-name": "moqui.basic.StatusItem"
+                    },
+                    {
+                        "type": "many",
+                        "related-entity-name": "moqui.example.ExampleItem",
+                        "short-alias": "items",
+                        "key-map": [
+                            {
+                                "field-name": "exampleId"
+                            }
+                        ]
+                    }
+                ],
+                "index": [
+                    {
+                        "name": "a",
+                        "description": "aa",
+                        "index-field": [
+                            {
+                                "name": "b"
+                            }
+                        ]
+                    },
+                    {
+                        "name": "c",
+                        "description": "cc",
+                        "index-field": [
+                            {
+                                "name": "d"
+                            }
+                        ]
+                    }
+                ],
+                "seed-data": [
+                    {
+                        "moqui.basic.EnumerationType": {
+                            "description": "Example Type",
+                            "enumTypeId": "ExampleType"
+                        }
+                    },
+                    {
+                        "moqui.basic.Enumeration": {
+                            "description": "Real World",
+                            "enumId": "EXT_REAL_WORLD",
+                            "enumTypeId": "ExampleType"
+                        }
+                    },
+                    {
+                        "moqui.basic.Enumeration": {
+                            "description": "Made Up",
+                            "enumId": "EXT_MADE_UP",
+                            "enumTypeId": "ExampleType"
+                        }
+                    },
+                    {
+                        "moqui.basic.Enumeration": {
+                            "description": "Contrived",
+                            "enumId": "EXT_CONTRIVED",
+                            "parentEnumId": "EXT_MADE_UP",
+                            "enumTypeId": "ExampleType"
+                        }
+                    },
+                    {
+                        "moqui.basic.Enumeration": {
+                            "description": "Inspired",
+                            "enumId": "EXT_INSPIRED",
+                            "parentEnumId": "EXT_MADE_UP",
+                            "enumTypeId": "ExampleType"
+                        }
+                    },
+                    {
+                        "moqui.basic.StatusType": {
+                            "description": "Example",
+                            "statusTypeId": "Example"
+                        }
+                    },
+                    {
+                        "moqui.basic.StatusItem": {
+                            "description": "In Design",
+                            "sequenceNum": "1",
+                            "statusId": "EXST_IN_DESIGN",
+                            "statusTypeId": "Example"
+                        }
+                    },
+                    {
+                        "moqui.basic.StatusItem": {
+                            "description": "Defined",
+                            "sequenceNum": "2",
+                            "statusId": "EXST_DEFINED",
+                            "statusTypeId": "Example"
+                        }
+                    },
+                    {
+                        "moqui.basic.StatusItem": {
+                            "description": "Approved",
+                            "sequenceNum": "3",
+                            "statusId": "EXST_APPROVED",
+                            "statusTypeId": "Example"
+                        }
+                    },
+                    {
+                        "moqui.basic.StatusItem": {
+                            "description": "Implemented",
+                            "sequenceNum": "4",
+                            "statusId": "EXST_IMPLEMENTED",
+                            "statusTypeId": "Example"
+                        }
+                    },
+                    {
+                        "moqui.basic.StatusItem": {
+                            "description": "Tested",
+                            "sequenceNum": "5",
+                            "statusId": "EXST_TESTED",
+                            "statusTypeId": "Example"
+                        }
+                    },
+                    {
+                        "moqui.basic.StatusItem": {
+                            "description": "Complete",
+                            "sequenceNum": "6",
+                            "statusId": "EXST_COMPLETE",
+                            "statusTypeId": "Example"
+                        }
+                    },
+                    {
+                        "moqui.basic.StatusItem": {
+                            "description": "Cancelled",
+                            "sequenceNum": "99",
+                            "statusId": "EXST_CANCELLED",
+                            "statusTypeId": "Example"
+                        }
+                    },
+                    {
+                        "moqui.basic.StatusFlowTransition": {
+                            "statusFlowId": "Default",
+                            "statusId": "EXST_IN_DESIGN",
+                            "toStatusId": "EXST_DEFINED",
+                            "transitionName": "Definition Complete"
+                        }
+                    },
+                    {
+                        "moqui.basic.StatusFlowTransition": {
+                            "statusFlowId": "Default",
+                            "statusId": "EXST_DEFINED",
+                            "toStatusId": "EXST_APPROVED",
+                            "transitionName": "Approve"
+                        }
+                    },
+                    {
+                        "moqui.basic.StatusFlowTransition": {
+                            "statusFlowId": "Default",
+                            "statusId": "EXST_APPROVED",
+                            "toStatusId": "EXST_IMPLEMENTED",
+                            "transitionName": "Implementation Complete"
+                        }
+                    },
+                    {
+                        "moqui.basic.StatusFlowTransition": {
+                            "statusFlowId": "Default",
+                            "statusId": "EXST_IMPLEMENTED",
+                            "toStatusId": "EXST_TESTED",
+                            "transitionName": "Testing Complete"
+                        }
+                    },
+                    {
+                        "moqui.basic.StatusFlowTransition": {
+                            "statusFlowId": "Default",
+                            "statusId": "EXST_TESTED",
+                            "toStatusId": "EXST_COMPLETE",
+                            "transitionName": "Example Completed"
+                        }
+                    },
+                    {
+                        "moqui.basic.StatusFlowTransition": {
+                            "statusFlowId": "Default",
+                            "statusId": "EXST_IN_DESIGN",
+                            "toStatusId": "EXST_CANCELLED",
+                            "transitionName": "Cancel Example"
+                        }
+                    },
+                    {
+                        "moqui.basic.StatusFlowTransition": {
+                            "statusFlowId": "Default",
+                            "statusId": "EXST_DEFINED",
+                            "toStatusId": "EXST_CANCELLED",
+                            "transitionName": "Cancel Example"
+                        }
+                    },
+                    {
+                        "moqui.basic.StatusFlowTransition": {
+                            "statusFlowId": "Default",
+                            "statusId": "EXST_APPROVED",
+                            "toStatusId": "EXST_CANCELLED",
+                            "transitionName": "Cancel Example"
+                        }
+                    },
+                    {
+                        "moqui.basic.StatusFlowTransition": {
+                            "statusFlowId": "Default",
+                            "statusId": "EXST_IMPLEMENTED",
+                            "toStatusId": "EXST_CANCELLED",
+                            "transitionName": "Cancel Example"
+                        }
+                    },
+                    {
+                        "moqui.basic.StatusFlowTransition": {
+                            "statusFlowId": "Default",
+                            "statusId": "EXST_TESTED",
+                            "toStatusId": "EXST_CANCELLED",
+                            "transitionName": "Cancel Example"
+                        }
+                    }
+                ]
+            }
+        ],
+        "extend-entity": [
+            {
+                "entity-name": "Example",
+                "package-name": "moqui.example",
+                "field": [
+                    {
+                        "name": "auditedField",
+                        "type": "text-medium",
+                        "enable-audit-log": "true"
+                    },
+                    {
+                        "name": "encryptedField",
+                        "type": "text-medium",
+                        "encrypt": "true"
+                    },
+                    {
+                        "name": "exampleEmail",
+                        "type": "text-medium"
+                    },
+                    {
+                        "name": "exampleUrl",
+                        "type": "text-medium"
+                    }
+                ]
+            }
+        ]
+    }
+}

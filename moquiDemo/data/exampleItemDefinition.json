@@ -1,0 +1,271 @@
+{
+  "entities": {
+    "extend-entity": [{
+      "entity-name": "Example",
+      "package-name": "moqui.example",
+      "field": [
+        {
+          "name": "auditedField",
+          "type": "text-medium",
+          "enable-audit-log": "true"
+        },
+        {
+          "name": "encryptedField",
+          "type": "text-medium",
+          "encrypt": "true"
+        },
+        {
+          "name": "exampleEmail",
+          "type": "text-medium"
+        },
+        {
+          "name": "exampleUrl",
+          "type": "text-medium"
+        }
+      ]
+    }],
+    "entity": [
+      {
+        "entity-name": "Example",
+        "package-name": "moqui.example",
+        "short-alias": "examples",
+        "allow-user-field": "true",
+        "field": [
+          {
+            "name": "exampleId",
+            "type": "id",
+            "is-pk": "true",
+            "description": "primary sequenced ID"
+          },
+          {
+            "name": "exampleTypeEnumId",
+            "type": "id"
+          },
+          {
+            "name": "statusId",
+            "type": "id",
+            "enable-audit-log": "true"
+          },
+          {
+            "name": "exampleName",
+            "type": "text-medium"
+          },
+          {
+            "name": "description",
+            "type": "text-medium"
+          },
+          {
+            "name": "longDescription",
+            "type": "text-very-long"
+          },
+          {
+            "name": "comments",
+            "type": "text-long"
+          },
+          {
+            "name": "exampleSize",
+            "type": "number-integer"
+          },
+          {
+            "name": "exampleDate",
+            "type": "date-time"
+          },
+          {
+            "name": "testDate",
+            "type": "date"
+          },
+          {
+            "name": "testTime",
+            "type": "time"
+          }
+        ],
+        "relationship": [
+          {
+            "type": "one",
+            "title": "ExampleType",
+            "related-entity-name": "moqui.basic.Enumeration",
+            "key-map": {
+              "field-name": "exampleTypeEnumId"
+            }
+          },
+          {
+            "type": "one",
+            "title": "Example",
+            "related-entity-name": "moqui.basic.StatusItem"
+          },
+          {
+            "type": "many",
+            "related-entity-name": "moqui.example.ExampleItem",
+            "short-alias": "items",
+            "key-map": {
+              "field-name": "exampleId"
+            }
+          }
+        ]
+      },
+      {
+        "entity-name": "ExampleItem",
+        "package-name": "moqui.example",
+        "short-alias": "exampleItems",
+        "field": [
+          {
+            "name": "exampleId",
+            "type": "id",
+            "is-pk": "true"
+          },
+          {
+            "name": "exampleItemSeqId",
+            "type": "id",
+            "is-pk": "true",
+            "description": "secondary sequenced ID"
+          },
+          {
+            "name": "description",
+            "type": "text-medium"
+          },
+          {
+            "name": "amount",
+            "type": "number-float"
+          },
+          {
+            "name": "amountUomId",
+            "type": "id"
+          }
+        ],
+        "relationship": [
+          {
+            "type": "one",
+            "title": "Amount",
+            "related-entity-name": "moqui.basic.Uom",
+            "key-map": {
+              "field-name": "amountUomId"
+            }
+          },
+          {
+            "type": "one",
+            "related-entity-name": "moqui.example.Example"
+          }
+        ]
+      },
+      {
+        "entity-name": "ExampleContent",
+        "package-name": "moqui.example",
+        "field": [
+          {
+            "name": "exampleId",
+            "type": "id",
+            "is-pk": "true"
+          },
+          {
+            "name": "contentLocation",
+            "type": "text-medium",
+            "is-pk": "true"
+          },
+          {
+            "name": "purposeEnumId",
+            "type": "id"
+          },
+          {
+            "name": "locale",
+            "type": "text-short"
+          }
+        ],
+        "relationship": [
+          {
+            "type": "one",
+            "title": "ExampleContentPurpose",
+            "related-entity-name": "moqui.basic.Enumeration",
+            "key-map": {
+              "field-name": "purposeEnumId"
+            }
+          },
+          {
+            "type": "one",
+            "related-entity-name": "moqui.example.Example"
+          }
+        ]
+      },
+      {
+        "entity-name": "ExampleFeature",
+        "package-name": "moqui.example",
+        "short-alias": "exampleFeatures",
+        "field": [
+          {
+            "name": "exampleFeatureId",
+            "type": "id",
+            "is-pk": "true",
+            "description": "primary sequenced ID"
+          },
+          {
+            "name": "featureSourceEnumId",
+            "type": "id"
+          },
+          {
+            "name": "description",
+            "type": "text-medium"
+          }
+        ],
+        "relationship": [
+          {
+            "type": "one",
+            "title": "ExampleFeatureSource",
+            "related-entity-name": "moqui.basic.Enumeration",
+            "key-map": {
+              "field-name": "featureSourceEnumId"
+            }
+          }]
+      },
+      {
+        "entity-name": "ExampleFeatureAppl",
+        "package-name": "moqui.example",
+        "field": [
+          {
+            "name": "exampleId",
+            "type": "id",
+            "is-pk": "true"
+          },
+          {
+            "name": "exampleFeatureId",
+            "type": "id",
+            "is-pk": "true"
+          },
+          {
+            "name": "fromDate",
+            "type": "date-time",
+            "is-pk": "true"
+          },
+          {
+            "name": "thruDate",
+            "type": "date-time"
+          },
+          {
+            "name": "exampleFeatureApplEnumId",
+            "type": "id"
+          },
+          {
+            "name": "sequenceNum",
+            "type": "number-integer"
+          }
+        ],
+        "relationship": [
+          {
+            "type": "one",
+            "related-entity-name": "moqui.example.Example"
+          },
+          {
+            "type": "one",
+            "related-entity-name": "moqui.example.ExampleFeature"
+          },
+          {
+            "type": "one",
+            "title": "ExampleFeatureAppl",
+            "related-entity-name": "moqui.basic.Enumeration",
+            "key-map": {
+              "field-name": "exampleFeatureApplEnumId"
+            }
+          }
+        ]
+      }
+    ]
+  }
+}
