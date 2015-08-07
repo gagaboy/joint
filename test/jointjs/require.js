@@ -2,12 +2,9 @@ require.config({
     baseUrl: '../../',
     paths: {
         // Dependencies for Joint:
-        'jquery': 'lib/jquery/dist/jquery',
+        'jquery': 'lib/jquery/jquery',
         'backbone': 'lib/backbone/backbone',
-        'lodash': 'lib/lodash/dist/lodash',
-        'g': 'src/geometry',
-        'V': 'src/vectorizer',
-        'Handlebars': 'lib/handlebars/handlebars'
+        'lodash': 'lib/lodash/dist/lodash'
     },
     map: {
         '*': {
@@ -17,54 +14,42 @@ require.config({
     }
 });
 
+module('RequireJS');
+
 (function() {
 
     var buildFiles = [
-        'dist/joint.all.clean.build',
-        'dist/joint.all.clean.build.min',
-        'dist/joint.clean.build',
-        'dist/joint.clean.build.min'
+        'dist/joint.core',
+        'dist/joint.core.min',
+        'dist/joint',
+        'dist/joint.min'
     ];
 
-    while (buildFiles.length > 0) {
-
-        (function(buildFile) {
-
-            test('sanity checks for distribution file: "' + buildFile + '"', function(assert) {
-
-                var done = assert.async();
-
-                require([buildFile], function(joint) {
-
-                    assert.ok(typeof joint !== 'undefined', 'Should be able to require joint module');
-                    assert.ok(typeof joint.dia === 'object', 'Joint should have "dia" object');
-                    done();
-                });
-            });
-
-        })( buildFiles.pop() );
-    }
-
-    test('verify that geometry library is accessible through vectorizer', function(assert) {
+    test('require joint build files', function(assert) {
 
         var done = assert.async();
 
-        require(['V'], function(V) {
+        require(buildFiles, function() {
 
-            var el = V('<g><rect/><text/></g>');
-            var errorMessage = '';
+            var modules = Array.prototype.slice.call(arguments);
+            var buildFile, joint;
 
-            try {
-                // Call translateCenterToPoint which depends on the geometry library.  If this 
-                // call throws an error then the geometry library was not properly included 
-                // by require js.
-                el.translateCenterToPoint({ x: 5, y: 5 });                
+            assert.ok(buildFiles.length === modules.length, 'expected ' + buildFiles.length + ' build file(s) to be loaded');
+
+            for (var i = 0; i < modules.length; i++) {
+
+                buildFile = buildFiles[i];
+                joint = modules[i];
+
+                test('sanity checks for build file: "' + buildFile + '"', function(assert) {
+
+                    assert.ok(typeof joint !== 'undefined', 'Should be able to require joint module');
+                    assert.ok(typeof joint.dia === 'object', 'Joint should have "dia" object');
+                    assert.ok(typeof joint.dia.Graph === 'function', 'joint.dia.Graph should be a function');
+                    assert.ok(typeof joint.dia.Paper === 'function', 'joint.dia.Paper should be a function');
+                });
             }
-            catch (ex) {
-                errorMessage = ex.toString();
-            }
 
-            assert.strictEqual(errorMessage, '', 'Should not encounter an unexpected error');
             done();
         });
     });
