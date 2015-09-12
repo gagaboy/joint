@@ -1,4 +1,4 @@
-/*! JointJS v0.9.4 - JavaScript diagramming library  2015-08-03 
+/*! JointJS v0.9.5 - JavaScript diagramming library  2015-09-10 
 
 
 This Source Code Form is subject to the terms of the Mozilla Public
@@ -219,6 +219,9 @@ var g = (function() {
         // the center of inversion in ref point.
         reflection: function(ref) {
             return point(ref).move(this, this.distance(ref));
+        },
+        clone: function() {
+            return point(this);
         }
     };
     // Alternative constructor, from polar coordinates.
@@ -342,6 +345,9 @@ var g = (function() {
         pointOffset: function(p) {
             // Find the sign of the determinant of vectors (start,end), where p is the query point.
             return ((this.end.x - this.start.x) * (p.y - this.start.y) - (this.end.y - this.start.y) * (p.x - this.start.x)) / 2;
+        },
+        clone: function() {
+            return line(this);
         }
     };
 
@@ -366,6 +372,12 @@ var g = (function() {
         toString: function() {
             return this.origin().toString() + ' ' + this.corner().toString();
         },
+        // @return {boolean} true if rectangles are equal.
+        equals: function(r) {
+            var mr = g.rect(this).normalize();
+            var nr = g.rect(r).normalize();
+            return mr.x === nr.x && mr.y === nr.y && mr.width === nr.width && mr.height === nr.height;
+        },
         origin: function() {
             return point(this.x, this.y);
         },
@@ -381,19 +393,25 @@ var g = (function() {
         center: function() {
             return point(this.x + this.width / 2, this.y + this.height / 2);
         },
-        // @return {boolean} true if rectangles intersect
+        // @return {rect} if rectangles intersect, {null} if not.
         intersect: function(r) {
             var myOrigin = this.origin();
             var myCorner = this.corner();
             var rOrigin = r.origin();
             var rCorner = r.corner();
 
+            // No intersection found
             if (rCorner.x <= myOrigin.x ||
                 rCorner.y <= myOrigin.y ||
                 rOrigin.x >= myCorner.x ||
-                rOrigin.y >= myCorner.y) return false;
-            return true;
+                rOrigin.y >= myCorner.y) return null;
+
+            var x = Math.max(myOrigin.x, rOrigin.x);
+            var y = Math.max(myOrigin.y, rOrigin.y);
+
+            return rect(x, y, Math.min(myCorner.x, rCorner.x) - x, Math.min(myCorner.y, rCorner.y) - y);
         },
+
         // @return {string} (left|right|top|bottom) side which is nearest to point
         // @see Squeak Smalltalk, Rectangle>>sideNearestTo:
         sideNearestToPoint: function(p) {
@@ -562,6 +580,18 @@ var g = (function() {
             var w = this.width * ct + this.height * st;
             var h = this.width * st + this.height * ct;
             return rect(this.x + (this.width - w) / 2, this.y + (this.height - h) / 2, w, h);
+        },
+        snapToGrid: function(gx, gy) {
+            var origin = this.origin().snapToGrid(gx, gy);
+            var corner = this.corner().snapToGrid(gx, gy);
+            this.x = origin.x;
+            this.y = origin.y;
+            this.width = corner.x - origin.x;
+            this.height = corner.y - origin.y;
+            return this;
+        },
+        clone: function() {
+            return rect(this);
         }
     };
 
@@ -609,6 +639,9 @@ var g = (function() {
             result = point(this.x + x, this.y + y);
             if (angle) return result.rotate(point(this.x, this.y), -angle);
             return result;
+        },
+        clone: function() {
+            return ellipse(this);
         }
     };
 
@@ -819,8 +852,17 @@ V = Vectorizer = (function() {
         return 'v-' + id;
     }
 
+    // Replace all spaces with the Unicode No-break space (http://www.fileformat.info/info/unicode/char/a0/index.htm).
+    // IE would otherwise collapse all spaces into one. This is used in the text() method but it is
+    // also exposed so that the programmer can use it in case he needs to. This is useful e.g. in tests
+    // when you want to compare the actual DOM text content without having to add the unicode character in
+    // the place of all spaces.
+    function sanitizeText(text) {
+        return (text || '').replace(/ /g, '\u00A0');
+    }
+
     function isObject(o) {
-        return Object(o) === Object(o);
+        return o === Object(o);
     }
 
     function isArray(o) {
@@ -832,9 +874,33 @@ V = Vectorizer = (function() {
     function createSvgDocument(content) {
 
         var svg = '<svg xmlns="' + ns.xmlns + '" xmlns:xlink="' + ns.xlink + '" version="' + SVGversion + '">' + (content || '') + '</svg>';
-        var parser = new DOMParser();
-        parser.async = false;
-        return parser.parseFromString(svg, 'text/xml').documentElement;
+        var xml = parseXML(svg, { async: false });
+        return xml.documentElement;
+    }
+
+    function parseXML(data, opt) {
+
+        opt = opt || {};
+
+        var xml;
+
+        try {
+            var parser = new DOMParser();
+
+            if (typeof opt.async !== 'undefined') {
+                parser.async = opt.async;
+            }
+
+            xml = parser.parseFromString(data, 'text/xml');
+        } catch (error) {
+            xml = undefined;
+        }
+
+        if (!xml || xml.getElementsByTagName('parsererror').length) {
+            throw new Error('Invalid XML: ' + data);
+        }
+
+        return xml;
     }
 
     // Create SVG element.
@@ -1092,12 +1158,9 @@ V = Vectorizer = (function() {
             try {
 
                 box = this.node.getBBox();
-
-                // Opera returns infinite values in some cases.
-                // Note that Infinity | 0 produces 0 as opposed to Infinity || 0.
-                // We also have to create new object as the standard says that you can't
+                // We are creating a new object as the standard says that you can't
                 // modify the attributes of a bbox.
-                box = { x: box.x | 0, y: box.y | 0, width: box.width | 0, height: box.height | 0 };
+                box = { x: box.x, y: box.y, width: box.width, height: box.height };
 
             } catch (e) {
 
@@ -1122,6 +1185,9 @@ V = Vectorizer = (function() {
 
         text: function(content, opt) {
 
+            // Replace all spaces with the Unicode No-break space (http://www.fileformat.info/info/unicode/char/a0/index.htm).
+            // IE would otherwise collapse all spaces into one.
+            content = sanitizeText(content);
             opt = opt || {};
             var lines = content.split('\n');
             var i = 0;
@@ -1254,11 +1320,12 @@ V = Vectorizer = (function() {
 
                 } else {
 
-                    // Make sure the textContent is never empty. If it is, add an additional
-                    // space (an invisible character) so that following lines are correctly
+                    // Make sure the textContent is never empty. If it is, add a dummy
+                    // character and make it invisible, making the following lines correctly
                     // relatively positioned. `dy=1em` won't work with empty lines otherwise.
                     vLine.addClass('v-empty-line');
-                    vLine.node.textContent = ' ';
+                    vLine.node.style.opacity = 0;
+                    vLine.node.textContent = '-';
                 }
 
                 V(textNode).append(vLine);
@@ -2088,7 +2155,7 @@ V = Vectorizer = (function() {
         return found;
     };
 
-    // Shift all the textg annotations after character `index` by `offset` positions.
+    // Shift all the text annotations after character `index` by `offset` positions.
     V.shiftAnnotations = function(annotations, index, offset) {
 
         if (!annotations) return annotations;
@@ -2104,6 +2171,8 @@ V = Vectorizer = (function() {
         return annotations;
     };
 
+    V.sanitizeText = sanitizeText;
+
     return V;
 
 })();
@@ -2115,7 +2184,7 @@ V = Vectorizer = (function() {
 
 var joint = {
 
-    version: '0.9.4',
+    version: '0.9.5',
 
     // `joint.dia` namespace.
     dia: {},
@@ -2349,15 +2418,26 @@ var joint = {
 
         normalizeEvent: function(evt) {
 
-            return (evt.originalEvent && evt.originalEvent.changedTouches && evt.originalEvent.changedTouches.length) ? evt.originalEvent.changedTouches[0] : evt;
+            var touchEvt = evt.originalEvent && evt.originalEvent.changedTouches && evt.originalEvent.changedTouches[0];
+            if (touchEvt) {
+                for (var property in evt) {
+                    // copy all the properties from the input event that are not
+                    // defined on the touch event (functions included).
+                    if (touchEvt[property] === undefined) {
+                        touchEvt[property] = evt[property];
+                    }
+                }
+                return touchEvt;
+            }
+
+            return evt;
         },
 
         nextFrame:(function() {
 
             var raf;
-            var client = typeof window != 'undefined';
 
-            if (client) {
+            if (typeof window !== 'undefined') {
 
                 raf = window.requestAnimationFrame     ||
 		    window.webkitRequestAnimationFrame ||
@@ -2382,7 +2462,11 @@ var joint = {
                 };
             }
 
-            return client ? _.bind(raf, window) : raf;
+            return function(callback, context) {
+                return context
+                    ? raf(_.bind(callback, context))
+                    : raf(callback);
+            };
 
         })(),
 
@@ -2728,6 +2812,24 @@ var joint = {
             });
         },
 
+        // Sets attributes on the given element and its descendants based on the selector.
+        // `attrs` object: { [SELECTOR1]: { attrs1 }, [SELECTOR2]: { attrs2}, ... } e.g. { 'input': { color : 'red' }}
+        setAttributesBySelector: function(element, attrs) {
+
+            var $element = $(element);
+
+            _.each(attrs, function(attrs, selector) {
+                var $elements = $element.find(selector).addBack().filter(selector);
+                // Make a special case for setting classes.
+                // We do not want to overwrite any existing class.
+                if (_.has(attrs, 'class')) {
+                    $elements.addClass(attrs['class']);
+                    attrs = _.omit(attrs, 'class');
+                }
+                $elements.attr(attrs);
+            });
+        },
+
         // Return a new object with all for sides (top, bottom, left and right) in it.
         // Value of each side is taken from the given argument (either number or object).
         // Default value for a side is 0.
@@ -2892,7 +2994,7 @@ var joint = {
                 var margin = _.isFinite(args.margin) ? args.margin : 2;
                 var width = _.isFinite(args.width) ? args.width : 1;
 
-                return _.template(tpl, {
+                return _.template(tpl)({
                     color: args.color || 'blue',
                     opacity: _.isFinite(args.opacity) ? args.opacity : 1,
                     outerRadius: margin + width,
@@ -2908,7 +3010,7 @@ var joint = {
 
                 var tpl = '<filter><feFlood flood-color="${color}" flood-opacity="${opacity}" result="colored"/><feMorphology result="morphed" in="SourceGraphic" operator="dilate" radius="${width}"/><feComposite result="composed" in="colored" in2="morphed" operator="in"/><feGaussianBlur result="blured" in="composed" stdDeviation="${blur}"/><feBlend in="SourceGraphic" in2="blured" mode="normal"/></filter>';
 
-                return _.template(tpl, {
+                return _.template(tpl)({
                     color: args.color || 'red',
                     width: _.isFinite(args.width) ? args.width : 1,
                     blur: _.isFinite(args.blur) ? args.blur : 0,
@@ -2922,7 +3024,7 @@ var joint = {
 
                 var x = _.isFinite(args.x) ? args.x : 2;
 
-                return _.template('<filter><feGaussianBlur stdDeviation="${stdDeviation}"/></filter>', {
+                return _.template('<filter><feGaussianBlur stdDeviation="${stdDeviation}"/></filter>')({
                     stdDeviation: _.isFinite(args.y) ? [x, args.y] : x
                 });
             },
@@ -2938,7 +3040,7 @@ var joint = {
                     ? '<filter><feDropShadow stdDeviation="${blur}" dx="${dx}" dy="${dy}" flood-color="${color}" flood-opacity="${opacity}"/></filter>'
                     : '<filter><feGaussianBlur in="SourceAlpha" stdDeviation="${blur}"/><feOffset dx="${dx}" dy="${dy}" result="offsetblur"/><feFlood flood-color="${color}"/><feComposite in2="offsetblur" operator="in"/><feComponentTransfer><feFuncA type="linear" slope="${opacity}"/></feComponentTransfer><feMerge><feMergeNode/><feMergeNode in="SourceGraphic"/></feMerge></filter>';
 
-                return _.template(tpl, {
+                return _.template(tpl)({
                     dx: args.dx || 0,
                     dy: args.dy || 0,
                     opacity: _.isFinite(args.opacity) ? args.opacity : 1,
@@ -2952,7 +3054,7 @@ var joint = {
 
                 var amount = _.isFinite(args.amount) ? args.amount : 1;
 
-                return _.template('<filter><feColorMatrix type="matrix" values="${a} ${b} ${c} 0 0 ${d} ${e} ${f} 0 0 ${g} ${b} ${h} 0 0 0 0 0 1 0"/></filter>', {
+                return _.template('<filter><feColorMatrix type="matrix" values="${a} ${b} ${c} 0 0 ${d} ${e} ${f} 0 0 ${g} ${b} ${h} 0 0 0 0 0 1 0"/></filter>')({
                     a: 0.2126 + 0.7874 * (1 - amount),
                     b: 0.7152 - 0.7152 * (1 - amount),
                     c: 0.0722 - 0.0722 * (1 - amount),
@@ -2969,7 +3071,7 @@ var joint = {
 
                 var amount = _.isFinite(args.amount) ? args.amount : 1;
 
-                return _.template('<filter><feColorMatrix type="matrix" values="${a} ${b} ${c} 0 0 ${d} ${e} ${f} 0 0 ${g} ${h} ${i} 0 0 0 0 0 1 0"/></filter>', {
+                return _.template('<filter><feColorMatrix type="matrix" values="${a} ${b} ${c} 0 0 ${d} ${e} ${f} 0 0 ${g} ${h} ${i} 0 0 0 0 0 1 0"/></filter>')({
                     a: 0.393 + 0.607 * (1 - amount),
                     b: 0.769 - 0.769 * (1 - amount),
                     c: 0.189 - 0.189 * (1 - amount),
@@ -2987,7 +3089,7 @@ var joint = {
 
                 var amount = _.isFinite(args.amount) ? args.amount : 1;
 
-                return _.template('<filter><feColorMatrix type="saturate" values="${amount}"/></filter>', {
+                return _.template('<filter><feColorMatrix type="saturate" values="${amount}"/></filter>')({
                     amount: 1 - amount
                 });
             },
@@ -2995,7 +3097,7 @@ var joint = {
             // `angle` ...  the number of degrees around the color circle the input samples will be adjusted.
             hueRotate: function(args) {
 
-                return _.template('<filter><feColorMatrix type="hueRotate" values="${angle}"/></filter>', {
+                return _.template('<filter><feColorMatrix type="hueRotate" values="${angle}"/></filter>')({
                     angle: args.angle || 0
                 });
             },
@@ -3005,7 +3107,7 @@ var joint = {
 
                 var amount = _.isFinite(args.amount) ? args.amount : 1;
 
-                return _.template('<filter><feComponentTransfer><feFuncR type="table" tableValues="${amount} ${amount2}"/><feFuncG type="table" tableValues="${amount} ${amount2}"/><feFuncB type="table" tableValues="${amount} ${amount2}"/></feComponentTransfer></filter>', {
+                return _.template('<filter><feComponentTransfer><feFuncR type="table" tableValues="${amount} ${amount2}"/><feFuncG type="table" tableValues="${amount} ${amount2}"/><feFuncB type="table" tableValues="${amount} ${amount2}"/></feComponentTransfer></filter>')({
                     amount: amount,
                     amount2: 1 - amount
                 });
@@ -3014,7 +3116,7 @@ var joint = {
             // `amount` ... proportion of the conversion. A value of 0 will create an image that is completely black. A value of 1 leaves the input unchanged.
             brightness: function(args) {
 
-                return _.template('<filter><feComponentTransfer><feFuncR type="linear" slope="${amount}"/><feFuncG type="linear" slope="${amount}"/><feFuncB type="linear" slope="${amount}"/></feComponentTransfer></filter>', {
+                return _.template('<filter><feComponentTransfer><feFuncR type="linear" slope="${amount}"/><feFuncG type="linear" slope="${amount}"/><feFuncB type="linear" slope="${amount}"/></feComponentTransfer></filter>')({
                     amount: _.isFinite(args.amount) ? args.amount : 1
                 });
             },
@@ -3024,7 +3126,7 @@ var joint = {
 
                 var amount = _.isFinite(args.amount) ? args.amount : 1;
 
-                return _.template('<filter><feComponentTransfer><feFuncR type="linear" slope="${amount}" intercept="${amount2}"/><feFuncG type="linear" slope="${amount}" intercept="${amount2}"/><feFuncB type="linear" slope="${amount}" intercept="${amount2}"/></feComponentTransfer></filter>', {
+                return _.template('<filter><feComponentTransfer><feFuncR type="linear" slope="${amount}" intercept="${amount2}"/><feFuncG type="linear" slope="${amount}" intercept="${amount2}"/><feFuncB type="linear" slope="${amount}" intercept="${amount2}"/></feComponentTransfer></filter>')({
                     amount: amount,
                     amount2: .5 - amount / 2
                 });
@@ -3233,7 +3335,7 @@ var joint = {
             prefix: function(value, precision) {
 
                 var prefixes = _.map(['y', 'z', 'a', 'f', 'p', 'n', 'µ', 'm', '', 'k', 'M', 'G', 'T', 'P', 'E', 'Z', 'Y'], function(d, i) {
-                    var k = Math.pow(10, abs(8 - i) * 3);
+                    var k = Math.pow(10, Math.abs(8 - i) * 3);
                     return {
                         scale: i > 8 ? function(d) { return d / k; } : function(d) { return d * k; },
                         symbol: d
@@ -3258,29 +3360,30 @@ var joint = {
 
 joint.dia.GraphCells = Backbone.Collection.extend({
 
-    initialize: function() {
+    cellNamespace: joint.shapes,
+
+    initialize: function(models, opt) {
 
         // Backbone automatically doesn't trigger re-sort if models attributes are changed later when
         // they're already in the collection. Therefore, we're triggering sort manually here.
         this.on('change:z', this.sort, this);
+
+        // Set the optional namespace where all model classes are defined.
+        if (opt.cellNamespace) {
+            this.cellNamespace = opt.cellNamespace;
+        }
     },
 
     model: function(attrs, options) {
 
-        if (attrs.type === 'link') {
+        var namespace = options.collection.cellNamespace;
 
-            return new joint.dia.Link(attrs, options);
-        }
+        // Find the model class in the namespace or use the default one.
+        var ModelClass = (attrs.type === 'link')
+            ? joint.dia.Link
+            : joint.util.getByPath(namespace, attrs.type, '.') || joint.dia.Element;
 
-        var module = attrs.type.split('.')[0];
-        var entity = attrs.type.split('.')[1];
-
-        if (joint.shapes[module] && joint.shapes[module][entity]) {
-
-            return new joint.shapes[module][entity](attrs, options);
-        }
-
-        return new joint.dia.Element(attrs, options);
+        return new ModelClass(attrs, options);
     },
 
     // `comparator` makes it easy to sort cells based on their `z` index.
@@ -3300,6 +3403,8 @@ joint.dia.GraphCells = Backbone.Collection.extend({
 
         var links = this.filter(function(cell) {
 
+            if (!cell.isLink()) return false;
+
             var source = cell.get('source');
             var target = cell.get('target');
 
@@ -3314,6 +3419,8 @@ joint.dia.GraphCells = Backbone.Collection.extend({
             var embeddedCells = model.getEmbeddedCells({ deep: true });
 
             _.each(this.difference(links, embeddedCells), function(cell) {
+
+                if (!cell.isLink()) return;
 
                 if (opt.outbound) {
 
@@ -3337,6 +3444,41 @@ joint.dia.GraphCells = Backbone.Collection.extend({
         }
 
         return links;
+    },
+
+    getNeighbors: function(model, opt) {
+
+        opt = opt || {};
+
+        var neighbors = _.transform(this.getConnectedLinks(model, opt), function(res, link) {
+
+            var source = link.get('source');
+            var target = link.get('target');
+            var loop = link.hasLoop(opt);
+
+            // Discard if it is a point, or if the neighbor was already added.
+            if (opt.inbound && _.has(source, 'id') && !res[source.id]) {
+
+                var sourceElement = this.get(source.id);
+
+                if (loop || (sourceElement !== model && (!opt.deep || !sourceElement.isEmbeddedIn(model)))) {
+                    res[source.id] = sourceElement;
+                }
+            }
+
+            // Discard if it is a point, or if the neighbor was already added.
+            if (opt.outbound && _.has(target, 'id') && !res[target.id]) {
+
+                var targetElement = this.get(target.id);
+
+                if (loop || targetElement !== model && (!opt.deep || !targetElement.isEmbeddedIn(model))) {
+                    res[target.id] = targetElement;
+                }
+            }
+
+        }, {}, this);
+
+        return _.values(neighbors);
     },
 
     getCommonAncestor: function(/* cells */) {
@@ -3398,16 +3540,21 @@ joint.dia.Graph = Backbone.Model.extend({
 
     initialize: function(attrs, opt) {
 
+        opt = opt || {};
+
         // Passing `cellModel` function in the options object to graph allows for
         // setting models based on attribute objects. This is especially handy
         // when processing JSON graphs that are in a different than JointJS format.
-        this.set('cells', new joint.dia.GraphCells([], { model: opt && opt.cellModel }));
+        Backbone.Model.prototype.set.call(this, 'cells', new joint.dia.GraphCells([], {
+            model: opt.cellModel,
+            cellNamespace: opt.cellNamespace
+        }));
 
         // Make all the events fired in the `cells` collection available.
         // to the outside world.
         this.get('cells').on('all', this.trigger, this);
 
-        this.get('cells').on('remove', this.removeCell, this);
+        this.get('cells').on('remove', this._removeCell, this);
     },
 
     toJSON: function() {
@@ -3426,26 +3573,71 @@ joint.dia.Graph = Backbone.Model.extend({
             throw new Error('Graph JSON must contain cells array.');
         }
 
-        this.set(_.omit(json, 'cells'), opt);
-        this.resetCells(json.cells, opt);
+        return this.set(json, opt);
+    },
+
+    set: function(key, val, opt) {
+
+        var attrs;
+
+        // Handle both `key`, value and {key: value} style arguments.
+        if (typeof key === 'object') {
+            attrs = key;
+            opt = val;
+        } else {
+            (attrs = {})[key] = val;
+        }
+
+        // Make sure that `cells` attribute is handled separately via resetCells().
+        if (attrs.hasOwnProperty('cells')) {
+            this.resetCells(attrs.cells, opt);
+            attrs = _.omit(attrs, 'cells');
+        }
+
+        // The rest of the attributes are applied via original set method.
+        return Backbone.Model.prototype.set.call(this, attrs, opt);
     },
 
     clear: function(opt) {
 
-        this.trigger('batch:start');
-        this.get('cells').remove(this.get('cells').models, opt);
-        this.trigger('batch:stop');
+        opt = _.extend({}, opt, { clear: true });
+
+        var collection = this.get('cells');
+
+        if (collection.length === 0) return this;
+
+        this.trigger('batch:start', { batchName: 'clear' });
+
+        // The elements come after the links.
+        var cells = collection.sortBy(function(cell) {
+            return cell.isLink() ? 1 : 2;
+        });
+
+        do {
+
+            // Remove all the cells one by one.
+            // Note that all the links are removed first, so it's
+            // safe to remove the elements without removing the connected
+            // links first.
+            cells.shift().remove(opt);
+
+        } while (cells.length > 0);
+
+        this.trigger('batch:stop', { batchName: 'clear' });
+
+        return this;
     },
 
     _prepareCell: function(cell) {
 
-        if (cell instanceof Backbone.Model && _.isUndefined(cell.get('z'))) {
+        var attrs = (cell instanceof Backbone.Model) ? cell.attributes : cell;
 
-            cell.set('z', this.maxZIndex() + 1, { silent: true });
+        if (_.isUndefined(attrs.z)) {
+            attrs.z = this.maxZIndex() + 1;
+        }
 
-        } else if (_.isUndefined(cell.z)) {
-
-            cell.z = this.maxZIndex() + 1;
+        if (!_.isString(attrs.type)) {
+            throw new TypeError('dia.Graph: cell type must be a string.');
         }
 
         return cell;
@@ -3492,20 +3684,23 @@ joint.dia.Graph = Backbone.Model.extend({
         return this;
     },
 
-    removeCell: function(cell, collection, options) {
+    _removeCell: function(cell, collection, options) {
 
-        // Applications might provide a `disconnectLinks` option set to `true` in order to
-        // disconnect links when a cell is removed rather then removing them. The default
-        // is to remove all the associated links.
-        if (options && options.disconnectLinks) {
+        options = options || {};
 
-            this.disconnectLinks(cell, options);
+        if (!options.clear) {
+            // Applications might provide a `disconnectLinks` option set to `true` in order to
+            // disconnect links when a cell is removed rather then removing them. The default
+            // is to remove all the associated links.
+            if (options.disconnectLinks) {
 
-        } else {
+                this.disconnectLinks(cell, options);
 
-            this.removeLinks(cell, options);
+            } else {
+
+                this.removeLinks(cell, options);
+            }
         }
-
         // Silently remove the cell from the cells collection. Silently, because
         // `joint.dia.Cell.prototype.remove` already triggers the `remove` event which is
         // then propagated to the graph model. If we didn't remove the cell silently, two `remove` events
@@ -3517,6 +3712,11 @@ joint.dia.Graph = Backbone.Model.extend({
     getCell: function(id) {
 
         return this.get('cells').get(id);
+    },
+
+    getCells: function() {
+
+        return this.get('cells').toArray();
     },
 
     getElements: function() {
@@ -3541,35 +3741,9 @@ joint.dia.Graph = Backbone.Model.extend({
         return this.get('cells').getConnectedLinks(model, opt);
     },
 
-    getNeighbors: function(el) {
+    getNeighbors: function(model, opt) {
 
-        var links = this.getConnectedLinks(el);
-        var neighbors = [];
-        var cells = this.get('cells');
-
-        _.each(links, function(link) {
-
-            var source = link.get('source');
-            var target = link.get('target');
-
-            // Discard if it is a point.
-            if (!source.x) {
-                var sourceElement = cells.get(source.id);
-                if (sourceElement !== el) {
-
-                    neighbors.push(sourceElement);
-                }
-            }
-            if (!target.x) {
-                var targetElement = cells.get(target.id);
-                if (targetElement !== el) {
-
-                    neighbors.push(targetElement);
-                }
-            }
-        });
-
-        return neighbors;
+        return this.get('cells').getNeighbors(model, opt);
     },
 
     // Disconnect links connected to the cell `model`.
@@ -3587,7 +3761,7 @@ joint.dia.Graph = Backbone.Model.extend({
         _.invoke(this.getConnectedLinks(model), 'remove', options);
     },
 
-    // Find all views at given point
+    // Find all elements at given point
     findModelsFromPoint: function(p) {
 
         return _.filter(this.getElements(), function(el) {
@@ -3595,11 +3769,27 @@ joint.dia.Graph = Backbone.Model.extend({
         });
     },
 
-    // Find all views in given area
+    // Find all elements in given area
     findModelsInArea: function(r) {
 
         return _.filter(this.getElements(), function(el) {
             return el.getBBox().intersect(r);
+        });
+    },
+
+    // Find all elements under the given element.
+    findModelsUnderElement: function(element, opt) {
+
+        opt = _.defaults(opt || {}, { searchBy: 'bbox' });
+
+        var bbox = element.getBBox();
+        var elements = (opt.searchBy == 'bbox')
+            ? this.findModelsInArea(bbox)
+            : this.findModelsFromPoint(bbox[opt.searchBy]());
+
+        // don't account element itself or any of its descendents
+        return _.reject(elements, function(el) {
+            return element.id == el.id || el.isEmbeddedIn(element);
         });
     },
 
@@ -3832,7 +4022,7 @@ joint.dia.Cell = Backbone.Model.extend({
 
     embed: function(cell, opt) {
 
-        if (this == cell || this.isEmbeddedIn(cell)) {
+        if (this === cell || this.isEmbeddedIn(cell)) {
 
             throw new Error('Recursive embedding not allowed.');
 
@@ -3947,7 +4137,7 @@ joint.dia.Cell = Backbone.Model.extend({
         if (this.collection && opt.deep) {
 
             while (parentId) {
-                if (parentId == cellId) {
+                if (parentId === cellId) {
                     return true;
                 }
                 parentId = this.collection.get(parentId).get('parent');
@@ -3959,7 +4149,7 @@ joint.dia.Cell = Backbone.Model.extend({
 
             // When this cell is not part of a collection check
             // at least whether it's a direct child of given cell.
-            return parentId == cellId;
+            return parentId === cellId;
         }
     },
 
@@ -4001,12 +4191,12 @@ joint.dia.Cell = Backbone.Model.extend({
 
                 if (embedClone instanceof joint.dia.Link) {
 
-                    if (embedClone.get('source').id == this.id) {
+                    if (embedClone.get('source').id === this.id) {
 
                         embedClone.prop('source', { id: clone.id });
                     }
 
-                    if (embedClone.get('target').id == this.id) {
+                    if (embedClone.get('target').id === this.id) {
 
                         embedClone.prop('target', { id: clone.id });
                     }
@@ -4080,11 +4270,14 @@ joint.dia.Cell = Backbone.Model.extend({
                 var pathArray = path.split('/');
                 var property = pathArray[0];
 
+                // Remove the top-level property from the array of properties.
+                pathArray.shift();
+
                 opt = opt || {};
                 opt.propertyPath = path;
                 opt.propertyValue = value;
 
-                if (pathArray.length == 1) {
+                if (pathArray.length === 0) {
                     // Property is not nested. We can simply use `set()`.
                     return this.set(property, value, opt);
                 }
@@ -4096,7 +4289,7 @@ joint.dia.Cell = Backbone.Model.extend({
                 // Pure integer keys will cause issues and are therefore not allowed.
                 var initializer = update;
                 var prevProperty = property;
-                _.each(_.rest(pathArray), function(key) {
+                _.each(pathArray, function(key) {
                     initializer = initializer[prevProperty] = (_.isFinite(Number(key)) ? [] : {});
                     prevProperty = key;
                 });
@@ -4320,7 +4513,6 @@ joint.dia.CellView = Backbone.View.extend({
         // Store reference to this to the <g> DOM element so that the view is accessible through the DOM tree.
         this.$el.data('view', this);
 
-        this.listenTo(this.model, 'remove', this.remove);
         this.listenTo(this.model, 'change:attrs', this.onChangeAttrs);
     },
 
@@ -4680,6 +4872,7 @@ joint.dia.Element = joint.dia.Cell.extend({
 
     translate: function(tx, ty, opt) {
 
+        tx = tx || 0;
         ty = ty || 0;
 
         if (tx === 0 && ty === 0) {
@@ -4690,12 +4883,46 @@ joint.dia.Element = joint.dia.Cell.extend({
         opt = opt || {};
         // Pass the initiator of the translation.
         opt.translateBy = opt.translateBy || this.id;
+
+        var position = this.get('position') || { x: 0, y: 0 };
+
+        if (opt.restrictedArea && opt.translateBy === this.id) {
+
+            // We are restricting the translation for the element itself only. We get
+            // the bounding box of the element including all its embeds.
+            // All embeds have to be translated the exact same way as the element.
+            var bbox = this.getBBox({ deep: true });
+            var ra = opt.restrictedArea;
+            //- - - - - - - - - - - - -> ra.x + ra.width
+            // - - - -> position.x      |
+            // -> bbox.x
+            //                ▓▓▓▓▓▓▓   |
+            //         ░░░░░░░▓▓▓▓▓▓▓
+            //         ░░░░░░░░░        |
+            //   ▓▓▓▓▓▓▓▓░░░░░░░
+            //   ▓▓▓▓▓▓▓▓               |
+            //   <-dx->                     | restricted area right border
+            //         <-width->        |   ░ translated element
+            //   <- - bbox.width - ->       ▓ embedded element
+            var dx = position.x - bbox.x;
+            var dy = position.y - bbox.y;
+            // Find the maximal/minimal coordinates that the element can be translated
+            // while complies the restrictions.
+            var x = Math.max(ra.x + dx, Math.min(ra.x + ra.width + dx - bbox.width, position.x + tx));
+            var y = Math.max(ra.y + dy, Math.min(ra.y + ra.height + dy - bbox.height, position.y + ty));
+            // recalculate the translation taking the resctrictions into account.
+            tx = x - position.x;
+            ty = y - position.y;
+        }
+
+        var translatedPosition = {
+            x: position.x + tx,
+            y: position.y + ty
+        };
+
         // To find out by how much an element was translated in event 'change:position' handlers.
         opt.tx = tx;
         opt.ty = ty;
-
-        var position = this.get('position') || { x: 0, y: 0 };
-        var translatedPosition = { x: position.x + tx || 0, y: position.y + ty || 0 };
 
         if (opt.transition) {
 
@@ -4727,7 +4954,7 @@ joint.dia.Element = joint.dia.Cell.extend({
 
     fitEmbeds: function(opt) {
 
-        opt = opt || 0;
+        opt = opt || {};
 
         var collection = this.collection;
 
@@ -4798,7 +5025,20 @@ joint.dia.Element = joint.dia.Cell.extend({
         return this;
     },
 
-    getBBox: function() {
+    getBBox: function(opt) {
+
+        opt = opt || {};
+
+        if (opt.deep && this.collection) {
+
+            // Get all the embedded elements using breadth first algorithm,
+            // that doesn't use recursion.
+            var elements = this.getEmbeddedCells({ deep: true, breadthFirst: true });
+            // Add the model itself.
+            elements.push(this);
+
+            return this.collection.getBBox(elements);
+        }
 
         var position = this.get('position');
         var size = this.get('size');
@@ -5190,7 +5430,7 @@ joint.dia.ElementView = joint.dia.CellView.extend({
     // default markup is not desirable.
     renderMarkup: function() {
 
-        var markup = this.model.markup || this.model.get('markup');
+        var markup = this.model.get('markup') || this.model.markup;
 
         if (markup) {
 
@@ -5314,42 +5554,37 @@ joint.dia.ElementView = joint.dia.CellView.extend({
     // Embedding mode methods
     // ----------------------
 
-    findParentsByKey: function(key) {
+    prepareEmbedding: function(opt) {
 
-        var bbox = this.model.getBBox();
+        opt = opt || {};
 
-        return key == 'bbox'
-            ? this.paper.model.findModelsInArea(bbox)
-            : this.paper.model.findModelsFromPoint(bbox[key]());
-    },
-
-    prepareEmbedding: function() {
+        var model = opt.model || this.model;
+        var paper = opt.paper || this.paper;
 
         // Bring the model to the front with all his embeds.
-        this.model.toFront({ deep: true, ui: true });
+        model.toFront({ deep: true, ui: true });
 
         // Move to front also all the inbound and outbound links that are connected
         // to any of the element descendant. If we bring to front only embedded elements,
         // links connected to them would stay in the background.
-        _.invoke(this.paper.model.getConnectedLinks(this.model, { deep: true }), 'toFront', { ui: true });
+        _.invoke(paper.model.getConnectedLinks(model, { deep: true }), 'toFront', { ui: true });
 
         // Before we start looking for suitable parent we remove the current one.
-        var parentId = this.model.get('parent');
-        parentId && this.paper.model.getCell(parentId).unembed(this.model, { ui: true });
+        var parentId = model.get('parent');
+        parentId && paper.model.getCell(parentId).unembed(model, { ui: true });
     },
 
     processEmbedding: function(opt) {
 
-        opt = opt || this.paper.options;
+        opt = opt || {};
 
-        var candidates = this.findParentsByKey(opt.findParentBy);
+        var model = opt.model || this.model;
+        var paper = opt.paper || this.paper;
 
-        // don't account element itself or any of its descendents
-        candidates = _.reject(candidates, function(el) {
-            return this.model.id == el.id || el.isEmbeddedIn(this.model);
-        }, this);
+        var paperOptions = paper.options;
+        var candidates = paper.model.findModelsUnderElement(model, { searchBy: paperOptions.findParentBy });
 
-        if (opt.frontParentOnly) {
+        if (paperOptions.frontParentOnly) {
             // pick the element with the highest `z` index
             candidates = candidates.slice(-1);
         }
@@ -5370,8 +5605,8 @@ joint.dia.ElementView = joint.dia.CellView.extend({
 
             } else {
 
-                var view = candidate.findView(this.paper);
-                if (opt.validateEmbedding.call(this.paper, this, view)) {
+                var view = candidate.findView(paper);
+                if (paperOptions.validateEmbedding.call(paper, this, view)) {
 
                     // flip to the new candidate
                     newCandidateView = view;
@@ -5393,20 +5628,24 @@ joint.dia.ElementView = joint.dia.CellView.extend({
         }
     },
 
-    finalizeEmbedding: function() {
+    finalizeEmbedding: function(opt) {
+
+        opt = opt || {};
 
         var candidateView = this._candidateEmbedView;
+        var model = opt.model || this.model;
+        var paper = opt.paper || this.paper;
 
         if (candidateView) {
 
             // We finished embedding. Candidate view is chosen to become the parent of the model.
-            candidateView.model.embed(this.model, { ui: true });
+            candidateView.model.embed(model, { ui: true });
             candidateView.unhighlight(null, { embedding: true });
 
             delete this._candidateEmbedView;
         }
 
-        _.invoke(this.paper.model.getConnectedLinks(this.model, { deep: true }), 'reparent', { ui: true });
+        _.invoke(paper.model.getConnectedLinks(model, { deep: true }), 'reparent', { ui: true });
     },
 
     // Interaction. The controller part.
@@ -5414,30 +5653,35 @@ joint.dia.ElementView = joint.dia.CellView.extend({
 
     pointerdown: function(evt, x, y) {
 
+        var paper = this.paper;
+
         // target is a valid magnet start linking
-        if (evt.target.getAttribute('magnet') && this.paper.options.validateMagnet.call(this.paper, this, evt.target)) {
+        if (evt.target.getAttribute('magnet') && paper.options.validateMagnet.call(paper, this, evt.target)) {
 
             this.model.trigger('batch:start', { batchName: 'add-link' });
 
-            var link = this.paper.getDefaultLink(this, evt.target);
+            var link = paper.getDefaultLink(this, evt.target);
             link.set({
                 source: {
                     id: this.model.id,
                     selector: this.getSelector(evt.target),
-                    port: $(evt.target).attr('port')
+                    port: evt.target.getAttribute('port')
                 },
                 target: { x: x, y: y }
             });
 
-            this.paper.model.addCell(link);
+            paper.model.addCell(link);
 
-            this._linkView = this.paper.findViewByModel(link);
+            this._linkView = paper.findViewByModel(link);
             this._linkView.pointerdown(evt, x, y);
             this._linkView.startArrowheadMove('target');
 
         } else {
+
             this._dx = x;
             this._dy = y;
+
+            this.restrictedArea = paper.getRestrictedArea(this);
 
             joint.dia.CellView.prototype.pointerdown.apply(this, arguments);
             this.notify('element:pointerdown', evt, x, y);
@@ -5464,10 +5708,10 @@ joint.dia.ElementView = joint.dia.CellView.extend({
 
                 // Make sure the new element's position always snaps to the current grid after
                 // translate as the previous one could be calculated with a different grid size.
-                this.model.translate(
-		    g.snapToGrid(position.x, grid) - position.x + g.snapToGrid(x - this._dx, grid),
-		    g.snapToGrid(position.y, grid) - position.y + g.snapToGrid(y - this._dy, grid)
-	        );
+                var tx = g.snapToGrid(position.x, grid) - position.x + g.snapToGrid(x - this._dx, grid);
+                var ty = g.snapToGrid(position.y, grid) - position.y + g.snapToGrid(y - this._dy, grid);
+
+                this.model.translate(tx, ty, { restrictedArea: this.restrictedArea, ui: true });
 
                 if (this.paper.options.embeddingMode) {
 
@@ -5496,8 +5740,18 @@ joint.dia.ElementView = joint.dia.CellView.extend({
 
         if (this._linkView) {
 
+            var linkView = this._linkView;
+            var linkModel = linkView.model;
+
             // let the linkview deal with this event
-            this._linkView.pointerup(evt, x, y);
+            linkView.pointerup(evt, x, y);
+
+            // If the link pinning is not allowed and the link is not connected to an element
+            // we remove the link, because the link was never connected to any target element.
+            if (!this.paper.options.linkPinning && !_.has(linkModel.get('target'), 'id')) {
+                linkModel.remove({ ui: true });
+            }
+
             delete this._linkView;
 
             this.model.trigger('batch:stop', { batchName: 'add-link' });
@@ -5667,12 +5921,26 @@ joint.dia.Link = joint.dia.Cell.extend({
         return true;
     },
 
-    hasLoop: function() {
+    hasLoop: function(opt) {
+
+        opt = opt || {};
 
         var sourceId = this.get('source').id;
         var targetId = this.get('target').id;
+        var loop = sourceId && targetId && sourceId === targetId;
 
-        return sourceId && targetId && sourceId == targetId;
+        // Note that there in the deep mode a link can have a loop,
+        // even if it connects only a parent and its embed.
+        // A loop "target equals source" is valid in both shallow and deep mode.
+        if (!loop && opt.deep && this.collection) {
+
+            var sourceElement = this.collection.get(sourceId);
+            var targetElement = this.collection.get(targetId);
+
+            loop = sourceElement.isEmbeddedIn(targetElement) || targetElement.isEmbeddedIn(sourceElement);
+        }
+
+        return loop;
     }
 });
 
@@ -5906,7 +6174,14 @@ joint.dia.LinkView = joint.dia.CellView.extend({
         // link as well but only if the link is longer than `longLinkLength`.
         if (this.options.doubleLinkTools) {
 
-            var tool2 = tool.clone();
+            var tool2;
+            if (this.model.get('doubleToolMarkup') || this.model.doubleToolMarkup) {
+                toolTemplate = _.template(this.model.get('doubleToolMarkup') || this.model.doubleToolMarkup);
+                tool2 = V(toolTemplate());
+            } else {
+                tool2 = tool.clone();
+            }
+
             $tools.append(tool2.node);
             this._tool2Cache = tool2;
         }
@@ -6469,27 +6744,30 @@ joint.dia.LinkView = joint.dia.CellView.extend({
 
     findRoute: function(oldVertices) {
 
+        var namespace = joint.routers;
         var router = this.model.get('router');
+        var defaultRouter = this.paper.options.defaultRouter;
 
         if (!router) {
 
             if (this.model.get('manhattan')) {
                 // backwards compability
                 router = { name: 'orthogonal' };
+            } else if (defaultRouter) {
+                router = defaultRouter;
             } else {
-
                 return oldVertices;
             }
         }
 
-        var fn = joint.routers[router.name];
+        var args = router.args || {};
+        var routerFn = _.isFunction(router) ? router : namespace[router.name];
 
-        if (!_.isFunction(fn)) {
-
+        if (!_.isFunction(routerFn)) {
             throw 'unknown router: ' + router.name;
         }
 
-        var newVertices = fn.call(this, oldVertices || [], router.args || {}, this);
+        var newVertices = routerFn.call(this, oldVertices || [], args, this);
 
         return newVertices;
     },
@@ -6498,25 +6776,33 @@ joint.dia.LinkView = joint.dia.CellView.extend({
     // between `source` and `target`.
     getPathData: function(vertices) {
 
+        var namespace = joint.connectors;
         var connector = this.model.get('connector');
+        var defaultConnector = this.paper.options.defaultConnector;
 
         if (!connector) {
 
             // backwards compability
-            connector = this.model.get('smooth') ? { name: 'smooth' } : { name: 'normal' };
+            if (this.model.get('smooth')) {
+                connector = { name: 'smooth' };
+            } else {
+                connector = defaultConnector || { name: 'normal' };
+            }
         }
 
-        if (!_.isFunction(joint.connectors[connector.name])) {
+        var connectorFn = _.isFunction(connector) ? connector : namespace[connector.name];
+        var args = connector.args || {};
 
+        if (!_.isFunction(connectorFn)) {
             throw 'unknown connector: ' + connector.name;
         }
 
-        var pathData = joint.connectors[connector.name].call(
+        var pathData = connectorFn.call(
             this,
             this._markerCache.sourcePoint, // Note that the value is translated by the size
             this._markerCache.targetPoint, // of the marker. (We'r not using this.sourcePoint)
             vertices || (this.model.get('vertices') || {}),
-            connector.args || {}, // options
+            args, // options
             this
         );
 
@@ -6669,7 +6955,7 @@ joint.dia.LinkView = joint.dia.CellView.extend({
 
     _afterArrowheadMove: function() {
 
-        if (this._z) {
+        if (!_.isUndefined(this._z)) {
             this.model.set('z', this._z, { ui: true });
             delete this._z;
         }
@@ -6746,7 +7032,7 @@ joint.dia.LinkView = joint.dia.CellView.extend({
                 V(view.el).addClass('available-cell');
             }
 
-        }, this);
+        }, this).value();
     },
 
     _unmarkAvailableMagnets: function() {
@@ -6761,6 +7047,7 @@ joint.dia.LinkView = joint.dia.CellView.extend({
         // move without need to click on the actual arrowhead dom element.
         this._action = 'arrowhead-move';
         this._arrowhead = end;
+        this._initialEnd = _.clone(this.model.get(end)) || { x: 0, y: 0 };
         this._validateConnectionArgs = this._createValidateConnectionArgs(this._arrowhead);
         this._beforeArrowheadMove();
     },
@@ -7035,33 +7322,47 @@ joint.dia.LinkView = joint.dia.CellView.extend({
 
         } else if (this._action === 'arrowhead-move') {
 
-            if (this.paper.options.snapLinks) {
+            var paperOptions = this.paper.options;
+            var arrowhead = this._arrowhead;
 
+            if (paperOptions.snapLinks) {
+
+                // Finish off link snapping. Everything except view unhighlighting was already done on pointermove.
                 this._closestView && this._closestView.unhighlight(this._closestEnd.selector, { connecting: true, snapping: true });
                 this._closestView = this._closestEnd = null;
 
             } else {
 
-                if (this._magnetUnderPointer) {
-                    this._viewUnderPointer.unhighlight(this._magnetUnderPointer, { connecting: true });
+                var viewUnderPointer = this._viewUnderPointer;
+                var magnetUnderPointer = this._magnetUnderPointer;
+
+                delete this._viewUnderPointer;
+                delete this._magnetUnderPointer;
+
+                if (magnetUnderPointer) {
+
+                    viewUnderPointer.unhighlight(magnetUnderPointer, { connecting: true });
                     // Find a unique `selector` of the element under pointer that is a magnet. If the
                     // `this._magnetUnderPointer` is the root element of the `this._viewUnderPointer` itself,
                     // the returned `selector` will be `undefined`. That means we can directly pass it to the
                     // `source`/`target` attribute of the link model below.
-                    this.model.set(this._arrowhead, {
-                        id: this._viewUnderPointer.model.id,
-                        selector: this._viewUnderPointer.getSelector(this._magnetUnderPointer),
-                        port: $(this._magnetUnderPointer).attr('port')
-                    }, { ui: true });
+                    var selector = viewUnderPointer.getSelector(magnetUnderPointer);
+                    var port = magnetUnderPointer.getAttribute('port');
+                    var arrowheadValue = { id: viewUnderPointer.model.id };
+                    if (selector != null) arrowheadValue.port = port;
+                    if (port != null) arrowheadValue.selector = selector;
+                    this.model.set(arrowhead, arrowheadValue, { ui: true });
                 }
+            }
 
-                delete this._viewUnderPointer;
-                delete this._magnetUnderPointer;
+            // If the link pinning is not allowed and the link is not connected to an element
+            // reset the arrowhead to the position before the dragging started.
+            if (!paperOptions.linkPinning && !_.has(this.model.get(arrowhead), 'id')) {
+                this.model.set(arrowhead, this._initialEnd, { ui: true });
             }
 
             // Reparent the link if embedding is enabled
-            if (this.paper.options.embeddingMode && this.model.reparent()) {
-
+            if (paperOptions.embeddingMode && this.model.reparent()) {
                 // Make sure we don't reverse to the original 'z' index (see afterArrowheadMove()).
                 delete this._z;
             }
@@ -7073,7 +7374,6 @@ joint.dia.LinkView = joint.dia.CellView.extend({
 
         this.notify('link:pointerup', evt, x, y);
         joint.dia.CellView.prototype.pointerup.apply(this, arguments);
-
     }
 
 }, {
@@ -7107,12 +7407,24 @@ joint.dia.Paper = Backbone.View.extend({
         width: 800,
         height: 600,
         origin: { x: 0, y: 0 }, // x,y coordinates in top-left corner
-        gridSize: 50,
+        gridSize: 1,
         perpendicularLinks: false,
         elementView: joint.dia.ElementView,
         linkView: joint.dia.LinkView,
         snapLinks: false, // false, true, { radius: value }
 
+        // Restrict the translation of elements by given bounding box.
+        // Option accepts a boolean:
+        //  true - the translation is restricted to the paper area
+        //  false - no restrictions
+        // A method:
+        // restrictTranslate: function(elementView) {
+        //     var parentId = elementView.model.get('parent');
+        //     return parentId && this.model.getCell(parentId).getBBox();
+        // },
+        // Or a bounding box:
+        // restrictTranslate: { x: 10, y: 10, width: 790, height: 590 }
+        restrictTranslate: false,
         // Marks all available magnets with 'available-magnet' class name and all available cells with
         // 'available-cell' class name. Marks them when dragging a link is started and unmark
         // when the dragging is stopped.
@@ -7122,6 +7434,14 @@ joint.dia.Paper = Backbone.View.extend({
         // Value could be the Backbone.model or a function returning the Backbone.model
         // defaultLink: function(elementView, magnet) { return condition ? new customLink1() : new customLink2() }
         defaultLink: new joint.dia.Link,
+
+        // A connector that is used by links with no connector defined on the model.
+        // e.g. { name: 'rounded', args: { radius: 5 }} or a function
+        defaultConnector: { name: 'normal' },
+
+        // A router that is used by links with no router defined on the model.
+        // e.g. { name: 'oneSide', args: { padding: 10 }} or a function
+        defaultRouter: null,
 
         /* CONNECTING */
 
@@ -7160,7 +7480,17 @@ joint.dia.Paper = Backbone.View.extend({
         // Interactive flags. See online docs for the complete list of interactive flags.
         interactive: {
             labelMove: false
-        }
+        },
+
+        // When set to true the links can be pinned to the paper.
+        // i.e. link source/target can be a point e.g. link.get('source') ==> { x: 100, y: 100 };
+        linkPinning: true,
+
+        // Allowed number of mousemove events after which the pointerclick event will be still triggered.
+        clickThreshold: 0,
+
+        // The namespace, where all the cell views are defined.
+        cellViewNamespace: joint.shapes
     },
 
     events: {
@@ -7186,13 +7516,13 @@ joint.dia.Paper = Backbone.View.extend({
 
     _configure: function(options) {
 
-        if (this.options) options = _.extend({}, _.result(this, 'options'), options);
+        if (this.options) options = _.merge({}, _.result(this, 'options'), options);
         this.options = options;
     },
 
     initialize: function() {
 
-        _.bindAll(this, 'addCell', 'sortCells', 'resetCells', 'pointerup', 'asyncRenderCells');
+        _.bindAll(this, 'pointerup');
 
         this.svg = V('svg').node;
         this.viewport = V('g').addClass('viewport').node;
@@ -7207,14 +7537,14 @@ joint.dia.Paper = Backbone.View.extend({
         this.setDimensions();
 
         this.listenTo(this.model, 'add', this.onCellAdded);
-        this.listenTo(this.model, 'remove', this.onCellRemoved);
-        this.listenTo(this.model, 'reset', this.resetCells);
-        this.listenTo(this.model, 'sort', this.sortCells);
+        this.listenTo(this.model, 'remove', this.removeView);
+        this.listenTo(this.model, 'reset', this.resetViews);
+        this.listenTo(this.model, 'sort', this.sortViews);
 
         $(document).on('mouseup touchend', this.pointerup);
 
         // Hold the value when mouse has been moved: when mouse moved, no click event will be triggered.
-        this._mousemoved = false;
+        this._mousemoved = 0;
         // Hash of all cell views.
         this._views = {};
 
@@ -7225,7 +7555,7 @@ joint.dia.Paper = Backbone.View.extend({
     remove: function() {
 
         //clean up all DOM elements/views to prevent memory leaks
-        this.removeCells();
+        this.removeViews();
 
         $(document).off('mouseup touchend', this.pointerup);
 
@@ -7421,29 +7751,72 @@ joint.dia.Paper = Backbone.View.extend({
         return bbox;
     },
 
-    createViewForModel: function(cell) {
+    // Returns a geometry rectangle represeting the entire
+    // paper area (coordinates from the left paper border to the right one
+    // and the top border to the bottom one).
+    getArea: function() {
 
-        var view;
+        var transformationMatrix = this.viewport.getCTM().inverse();
+        var noTransformationBBox = { x: 0, y: 0, width: this.options.width, height: this.options.height };
 
-        var type = cell.get('type');
-        var module = type.split('.')[0];
-        var entity = type.split('.')[1];
+        return g.rect(V.transformRect(noTransformationBBox, transformationMatrix));
+    },
 
-        // If there is a special view defined for this model, use that one instead of the default `elementView`/`linkView`.
-        if (joint.shapes[module] && joint.shapes[module][entity + 'View']) {
+    getRestrictedArea: function() {
 
-            view = new joint.shapes[module][entity + 'View']({ model: cell, interactive: this.options.interactive });
+        var restrictedArea;
 
-        } else if (cell instanceof joint.dia.Element) {
-
-            view = new this.options.elementView({ model: cell, interactive: this.options.interactive });
-
+        if (_.isFunction(this.options.restrictTranslate)) {
+            // A method returning a bounding box
+            restrictedArea = this.options.restrictTranslate.aply(this, arguments);
+        } else if (this.options.restrictTranslate === true) {
+            // The paper area
+            restrictedArea = this.getArea();
         } else {
-
-            view = new this.options.linkView({ model: cell, interactive: this.options.interactive });
+            // Either false or a bounding box
+            restrictedArea = this.options.restrictTranslate || null;
         }
 
-        return view;
+        return restrictedArea;
+    },
+
+    createViewForModel: function(cell) {
+
+        // A class taken from the paper options.
+        var optionalViewClass;
+
+        // A default basic class (either dia.ElementView or dia.LinkView)
+        var defaultViewClass;
+
+        // A special class defined for this model in the corresponding namespace.
+        // e.g. joint.shapes.basic.Rect searches for joint.shapes.basic.RectView
+        var namespace = this.options.cellViewNamespace;
+        var type = cell.get('type') + 'View';
+        var namespaceViewClass = joint.util.getByPath(namespace, type, '.');
+
+        if (cell.isLink()) {
+            optionalViewClass = this.options.linkView;
+            defaultViewClass = joint.dia.LinkView;
+        } else {
+            optionalViewClass = this.options.elementView;
+            defaultViewClass = joint.dia.ElementView;
+        }
+
+        // a) the paper options view is a class (deprecated)
+        //  1. search the namespace for a view
+        //  2. if no view was found, use view from the paper options
+        // b) the paper options view is a function
+        //  1. call the function from the paper options
+        //  2. if no view was return, search the namespace for a view
+        //  3. if no view was found, use the default
+        var ViewClass = (optionalViewClass.prototype instanceof Backbone.View)
+            ? namespaceViewClass || optionalViewClass
+            : optionalViewClass.call(this, cell) || namespaceViewClass || defaultViewClass;
+
+        return new ViewClass({
+            model: cell,
+            interactive: this.options.interactive
+        });
     },
 
     onCellAdded: function(cell, graph, opt) {
@@ -7457,22 +7830,29 @@ joint.dia.Paper = Backbone.View.extend({
 
                 if (this._frameId) throw new Error('another asynchronous rendering in progress');
 
-                this.asyncRenderCells(this._asyncCells, opt);
+                this.asyncRenderViews(this._asyncCells, opt);
                 delete this._asyncCells;
             }
 
         } else {
 
-            this.addCell(cell);
+            this.renderView(cell);
         }
     },
 
-    onCellRemoved: function(cell) {
+    removeView: function(cell) {
 
-        delete this._views[cell.id];
+        var view = this._views[cell.id];
+
+        if (view) {
+            view.remove();
+            delete this._views[cell.id];
+        }
+
+        return view;
     },
 
-    addCell: function(cell) {
+    renderView: function(cell) {
 
         var view = this._views[cell.id] = this.createViewForModel(cell);
 
@@ -7483,9 +7863,11 @@ joint.dia.Paper = Backbone.View.extend({
         // This is the only way to prevent image dragging in Firefox that works.
         // Setting -moz-user-select: none, draggable="false" attribute or user-drag: none didn't help.
         $(view.el).find('image').on('dragstart', function() { return false; });
+
+        return view;
     },
 
-    beforeRenderCells: function(cells) {
+    beforeRenderViews: function(cells) {
 
         // Make sure links are always added AFTER elements.
         // They wouldn't find their sources/targets in the DOM otherwise.
@@ -7494,18 +7876,22 @@ joint.dia.Paper = Backbone.View.extend({
         return cells;
     },
 
-    afterRenderCells: function() {
+    afterRenderViews: function() {
 
-        this.sortCells();
+        this.sortViews();
     },
 
-    resetCells: function(cellsCollection, opt) {
+    resetViews: function(cellsCollection, opt) {
 
         $(this.viewport).empty();
 
+        // clearing views removes any event listeners
+        this.removeViews();
+
         var cells = cellsCollection.models.slice();
 
-        cells = this.beforeRenderCells(cells, opt);
+        // `beforeRenderViews()` can return changed cells array (e.g sorted).
+        cells = this.beforeRenderViews(cells, opt) || cells;
 
         if (this._frameId) {
 
@@ -7515,20 +7901,20 @@ joint.dia.Paper = Backbone.View.extend({
 
         if (this.options.async) {
 
-            this.asyncRenderCells(cells, opt);
-            // Sort the cells once all elements rendered (see asyncRenderCells()).
+            this.asyncRenderViews(cells, opt);
+            // Sort the cells once all elements rendered (see asyncRenderViews()).
 
         } else {
 
-            _.each(cells, this.addCell, this);
+            _.each(cells, this.renderView, this);
 
             // Sort the cells in the DOM manually as we might have changed the order they
             // were added to the DOM (see above).
-            this.sortCells();
+            this.sortViews();
         }
     },
 
-    removeCells: function() {
+    removeViews: function() {
 
         _.invoke(this._views, 'remove');
 
@@ -7537,7 +7923,7 @@ joint.dia.Paper = Backbone.View.extend({
 
     asyncBatchAdded: _.noop,
 
-    asyncRenderCells: function(cells, opt) {
+    asyncRenderViews: function(cells, opt) {
 
         if (this._frameId) {
 
@@ -7550,7 +7936,7 @@ joint.dia.Paper = Backbone.View.extend({
                 // The cell has to be part of the graph collection.
                 // There is a chance in asynchronous rendering
                 // that a cell was removed before it's rendered to the paper.
-                if (cell.collection === collection) this.addCell(cell);
+                if (cell.collection === collection) this.renderView(cell);
 
             }, this);
 
@@ -7561,19 +7947,19 @@ joint.dia.Paper = Backbone.View.extend({
 
             // No cells left to render.
             delete this._frameId;
-            this.afterRenderCells(opt);
+            this.afterRenderViews(opt);
             this.trigger('render:done', opt);
 
         } else {
 
             // Schedule a next batch to render.
-            this._frameId = joint.util.nextFrame(_.bind(function() {
-                this.asyncRenderCells(cells, opt);
-            }, this));
+            this._frameId = joint.util.nextFrame(function() {
+                this.asyncRenderViews(cells, opt);
+            }, this);
         }
     },
 
-    sortCells: function() {
+    sortViews: function() {
 
         // Run insertion sort algorithm in order to efficiently sort DOM elements according to their
         // associated model `z` attribute.
@@ -7639,19 +8025,18 @@ joint.dia.Paper = Backbone.View.extend({
 
     // Find the first view climbing up the DOM tree starting at element `el`. Note that `el` can also
     // be a selector or a jQuery object.
-    findView: function(el) {
+    findView: function($el) {
 
-        var $el = this.$(el);
+        var el = _.isString($el)
+            ? this.viewport.querySelector($el)
+            : $el instanceof $ ? $el[0] : $el;
 
-        if ($el.length > 0 && $el[0] !== this.el) {
-            do {
-                if ($el.data('view')) {
-                    return $el.data('view');
-                }
+        while (el && el !== this.el && el !== document) {
 
-                $el = $el.parent();
+            var id = el.getAttribute('model-id');
+            if (id) return this._views[id];
 
-            } while ($el[0] !== this.el);
+            el = el.parentNode;
         }
 
         return undefined;
@@ -7784,7 +8169,7 @@ joint.dia.Paper = Backbone.View.extend({
     mouseclick: function(evt) {
 
         // Trigger event when mouse not moved.
-        if (!this._mousemoved) {
+        if (this._mousemoved <= this.options.clickThreshold) {
 
             evt = joint.util.normalizeEvent(evt);
 
@@ -7803,7 +8188,7 @@ joint.dia.Paper = Backbone.View.extend({
             }
         }
 
-        this._mousemoved = false;
+        this._mousemoved = 0;
     },
 
     // Guard guards the event received. If the event is not interesting, guard returns `true`.
@@ -7868,8 +8253,8 @@ joint.dia.Paper = Backbone.View.extend({
 
         if (this.sourceView) {
 
-            // Mouse moved.
-            this._mousemoved = true;
+            // Mouse moved counter.
+            this._mousemoved++;
 
             var localPoint = this.snapToGrid({ x: evt.clientX, y: evt.clientY });
 
@@ -8714,7 +9099,7 @@ joint.routers.orthogonal = (function() {
 
 })();
 
-joint.routers.manhattan = (function() {
+joint.routers.manhattan = (function(g, _) {
 
     'use strict';
 
@@ -8726,9 +9111,6 @@ joint.routers.manhattan = (function() {
         // use of the perpendicular linkView option to connect center of element with first vertex
         perpendicular: true,
 
-        // tells how to divide the paper when creating the elements map
-        mapGridSize: 100,
-
         // should be source or target not to be consider as an obstacle
         excludeEnds: [], // 'source', 'target'
 
@@ -8737,7 +9119,7 @@ joint.routers.manhattan = (function() {
 
         // if number of route finding loops exceed the maximum, stops searching and returns
         // fallback route
-        maximumLoops: 500,
+        maximumLoops: 2000,
 
         // possible starting directions from an element
         startDirections: ['left', 'right', 'top', 'bottom'],
@@ -8754,7 +9136,7 @@ joint.routers.manhattan = (function() {
         },
 
         // maximum change of the direction
-        maxAllowedDirectionChange: 1,
+        maxAllowedDirectionChange: 90,
 
         // padding applied on the element bounding boxes
         paddingBox: function() {
@@ -8785,13 +9167,11 @@ joint.routers.manhattan = (function() {
         // a penalty received for direction change
         penalties: function() {
 
-            return [0, this.step / 2, this.step];
-        },
-
-        // heurestic method to determine the distance between two points
-        estimateCost: function(from, to) {
-
-            return from.manhattanDistance(to);
+            return {
+                0: 0,
+                45: this.step / 2,
+                90: this.step / 2
+            };
         },
 
         // a simple route used in situations, when main routing method fails
@@ -8800,9 +9180,7 @@ joint.routers.manhattan = (function() {
 
             // Find an orthogonal route ignoring obstacles.
 
-            var prevDirIndexes = opts.prevDirIndexes || {};
-
-            var point = (prevDirIndexes[from] || 0) % 2
+            var point = ((opts.previousDirAngle || 0) % 180 === 0)
                     ? g.point(from.x, to.y)
                     : g.point(to.x, from.y);
 
@@ -8812,6 +9190,140 @@ joint.routers.manhattan = (function() {
         // if a function is provided, it's used to route the link while dragging an end
         // i.e. function(from, to, opts) { return []; }
         draggingRoute: null
+    };
+
+    // Map of obstacles
+    // Helper structure to identify whether a point lies in an obstacle.
+    function ObstacleMap(opt) {
+
+        this.map = {};
+        this.options = opt;
+        // tells how to divide the paper when creating the elements map
+        this.mapGridSize = 100;
+    }
+
+    ObstacleMap.prototype.build = function(graph, link) {
+
+        var opt = this.options;
+
+        // source or target element could be excluded from set of obstacles
+        var excludedEnds = _.chain(opt.excludeEnds)
+            .map(link.get, link)
+            .pluck('id')
+            .map(graph.getCell, graph).value();
+
+        // Exclude any embedded elements from the source and the target element.
+        var excludedAncestors = [];
+
+        var source = graph.getCell(link.get('source').id);
+        if (source) {
+            excludedAncestors = _.union(excludedAncestors, _.map(source.getAncestors(), 'id'));
+        };
+
+        var target = graph.getCell(link.get('target').id);
+        if (target) {
+            excludedAncestors = _.union(excludedAncestors, _.map(target.getAncestors(), 'id'));
+        }
+
+        // builds a map of all elements for quicker obstacle queries (i.e. is a point contained
+        // in any obstacle?) (a simplified grid search)
+        // The paper is divided to smaller cells, where each of them holds an information which
+        // elements belong to it. When we query whether a point is in an obstacle we don't need
+        // to go through all obstacles, we check only those in a particular cell.
+        var mapGridSize = this.mapGridSize;
+
+        _.chain(graph.getElements())
+            // remove source and target element if required
+            .difference(excludedEnds)
+            // remove all elements whose type is listed in excludedTypes array
+            .reject(function(element) {
+                // reject any element which is an ancestor of either source or target
+                return _.contains(opt.excludeTypes, element.get('type')) || _.contains(excludedAncestors, element.id);
+            })
+            // change elements (models) to their bounding boxes
+            .invoke('getBBox')
+            // expand their boxes by specific padding
+            .invoke('moveAndExpand', opt.paddingBox)
+            // build the map
+            .foldl(function(map, bbox) {
+
+                var origin = bbox.origin().snapToGrid(mapGridSize);
+                var corner = bbox.corner().snapToGrid(mapGridSize);
+
+                for (var x = origin.x; x <= corner.x; x += mapGridSize) {
+                    for (var y = origin.y; y <= corner.y; y += mapGridSize) {
+
+                        var gridKey = x + '@' + y;
+
+                        map[gridKey] = map[gridKey] || [];
+                        map[gridKey].push(bbox);
+                    }
+                }
+
+                return map;
+
+            }, this.map).value();
+
+        return this;
+    };
+
+    ObstacleMap.prototype.isPointAccessible = function(point) {
+
+        var mapKey = point.clone().snapToGrid(this.mapGridSize).toString();
+
+        return _.every(this.map[mapKey], function(obstacle) {
+            return !obstacle.containsPoint(point);
+        });
+    };
+
+    // Sorted Set
+    // Set of items sorted by given value.
+    function SortedSet() {
+        this.items = [];
+        this.hash = {};
+        this.values = {};
+        this.OPEN = 1;
+        this.CLOSE = 2;
+    }
+
+    SortedSet.prototype.add = function(item, value) {
+
+        if (this.hash[item]) {
+            // item removal
+            this.items.splice(this.items.indexOf(item), 1);
+        } else {
+            this.hash[item] = this.OPEN;
+        }
+
+        this.values[item] = value;
+
+        var index = _.sortedIndex(this.items, item, function(i) {
+            return this.values[i];
+        }, this);
+
+        this.items.splice(index, 0, item);
+    };
+
+    SortedSet.prototype.remove = function(item) {
+        this.hash[item] = this.CLOSE;
+    };
+
+    SortedSet.prototype.isOpen = function(item) {
+        return this.hash[item] === this.OPEN;
+    };
+
+    SortedSet.prototype.isClose = function(item) {
+        return this.hash[item] === this.CLOSE;
+    };
+
+    SortedSet.prototype.isEmpty = function() {
+        return this.items.length === 0;
+    };
+
+    SortedSet.prototype.pop = function() {
+        var item =  this.items.shift();
+        this.remove(item);
+        return item;
     };
 
     // reconstructs a route by concating points with their parents
@@ -8838,28 +9350,26 @@ joint.routers.manhattan = (function() {
         route.unshift(current);
 
         return route;
-    };
+    }
 
     // find points around the rectangle taking given directions in the account
-    function getRectPoints(bbox, directionList, opts) {
+    function getRectPoints(bbox, directionList, opt) {
 
-        var step = opts.step;
-
+        var step = opt.step;
         var center = bbox.center();
-
-        var startPoints = _.chain(opts.directionMap).pick(directionList).map(function(direction) {
+        var startPoints = _.chain(opt.directionMap).pick(directionList).map(function(direction) {
 
             var x = direction.x * bbox.width / 2;
             var y = direction.y * bbox.height / 2;
 
-            var point = g.point(center).offset(x, y).snapToGrid(step);
+            var point = center.clone().offset(x, y);
 
             if (bbox.containsPoint(point)) {
 
                 point.offset(direction.x * step, direction.y * step);
             }
 
-            return point;
+            return point.snapToGrid(step);
 
         }).value();
 
@@ -8867,298 +9377,187 @@ joint.routers.manhattan = (function() {
     };
 
     // returns a direction index from start point to end point
-    function getDirection(start, end, dirLen) {
+    function getDirectionAngle(start, end, dirLen) {
 
-        var dirAngle = 360 / dirLen;
+        var q = 360 / dirLen;
+        return Math.floor(g.normalizeAngle(start.theta(end) + q / 2) / q) * q;
+    }
 
-        var q = Math.floor(start.theta(end) / dirAngle);
+    function getDirectionChange(angle1, angle2) {
 
-        return dirLen - q;
+        var dirChange = Math.abs(angle1 - angle2);
+        return dirChange > 180 ? 360 - dirChange : dirChange;
+    }
+
+    // heurestic method to determine the distance between two points
+    function estimateCost(from, endPoints) {
+
+        var min = Infinity;
+
+        for (var i = 0, len = endPoints.length; i < len; i++) {
+            var cost = from.manhattanDistance(endPoints[i]);
+            if (cost < min) min = cost;
+        };
+
+        return min;
     }
 
     // finds the route between to points/rectangles implementing A* alghoritm
     function findRoute(start, end, map, opt) {
 
-        var startDirections = opt.reversed ? opt.endDirections : opt.startDirections;
-        var endDirections = opt.reversed ? opt.startDirections : opt.endDirections;
+        var step = opt.step;
+        var startPoints, endPoints;
+        var startCenter, endCenter;
 
         // set of points we start pathfinding from
-        var startSet = start instanceof g.rect
-                ? getRectPoints(start, startDirections, opt)
-                : [start];
+        if (start instanceof g.rect) {
+            startPoints = getRectPoints(start, opt.startDirections, opt);
+            startCenter = start.center();
+        } else {
+            startCenter = start.clone().snapToGrid(step);
+            startPoints = [start];
+        }
 
         // set of points we want the pathfinding to finish at
-        var endSet = end instanceof g.rect
-                ? getRectPoints(end, endDirections, opt)
-                : [end];
+        if (end instanceof g.rect) {
+            endPoints = getRectPoints(end, opt.endDirections, opt);
+            endCenter = end.center();
+        } else {
+            endCenter = end.clone().snapToGrid(step);
+            endPoints = [end];
+        }
 
-        var startCenter = startSet.length > 1 ? start.center() : startSet[0];
-        var endCenter = endSet.length > 1 ? end.center() : endSet[0];
+        // take into account only accessible end points
+        startPoints = _.filter(startPoints, map.isPointAccessible, map);
+        endPoints = _.filter(endPoints, map.isPointAccessible, map);
 
-        // take into account  only accessible end points
-        var endPoints = _.filter(endSet, function(point) {
+        // Check if there is a accessible end point.
+        // We would have to use a fallback route otherwise.
+        if (startPoints.length > 0 && endPoints.length >  0) {
 
-            var mapKey = g.point(point).snapToGrid(opt.mapGridSize).toString();
+            // The set of tentative points to be evaluated, initially containing the start points.
+            var openSet = new SortedSet();
+            // Keeps reference to a point that is immediate predecessor of given element.
+            var parents = {};
+            // Cost from start to a point along best known path.
+            var costs = {};
 
-            var accesible = _.every(map[mapKey], function(obstacle) {
-                return !obstacle.containsPoint(point);
+            _.each(startPoints, function(point) {
+                var key = point.toString();
+                openSet.add(key, estimateCost(point, endPoints));
+                costs[key] = 0;
             });
 
-            return accesible;
-        });
-
-
-        if (endPoints.length) {
-
-            var step = opt.step;
-            var penalties = opt.penalties;
-
-            // choose the end point with the shortest estimated path cost
-            var endPoint = _.chain(endPoints).invoke('snapToGrid', step).min(function(point) {
-
-                return opt.estimateCost(startCenter, point);
-
-            }).value();
-
-            var parents = {};
-            var costFromStart = {};
-            var totalCost = {};
-
             // directions
+            var dir, dirChange;
             var dirs = opt.directions;
             var dirLen = dirs.length;
-            var dirHalfLen = dirLen / 2;
-            var dirIndexes = opt.previousDirIndexes || {};
-
-            // The set of point already evaluated.
-            var closeHash = {}; // keeps only information whether a point was evaluated'
-
-            // The set of tentative points to be evaluated, initially containing the start points
-            var openHash = {}; // keeps only information whether a point is to be evaluated'
-            var openSet = _.chain(startSet).invoke('snapToGrid', step).each(function(point) {
-
-                var key = point.toString();
-
-                costFromStart[key] = 0; // Cost from start along best known path.
-                totalCost[key] = opt.estimateCost(point, endPoint);
-                dirIndexes[key] = dirIndexes[key] || getDirection(startCenter, point, dirLen);
-                openHash[key] = true;
-
-            }).map(function(point) {
-
-                return point.toString();
-
-            }).sortBy(function(pointKey) {
-
-                return totalCost[pointKey];
-
-            }).value();
-
-            var loopCounter = opt.maximumLoops;
-
-            var maxAllowedDirectionChange = opt.maxAllowedDirectionChange;
+            var loopsRemain = opt.maximumLoops;
+            var endPointsKeys = _.invoke(endPoints, 'toString');
 
             // main route finding loop
-            while (openSet.length && loopCounter--) {
-
-                var currentKey = openSet[0];
-                var currentPoint = g.point(currentKey);
-
-                if (endPoint.equals(currentPoint)) {
-
-                    opt.previousDirIndexes = _.pick(dirIndexes, currentKey);
-                    return reconstructRoute(parents, currentPoint);
-                }
+            while (!openSet.isEmpty() && loopsRemain > 0) {
 
                 // remove current from the open list
-                openSet.splice(0, 1);
-                openHash[neighborKey] = null;
+                var currentKey = openSet.pop();
+                var currentPoint = g.point(currentKey);
+                var currentDist = costs[currentKey];
+                var previousDirAngle = currentDirAngle;
+                var currentDirAngle = parents[currentKey]
+                    ? getDirectionAngle(parents[currentKey], currentPoint, dirLen)
+                    : opt.previousDirAngle != null ? opt.previousDirAngle : getDirectionAngle(startCenter, currentPoint, dirLen);
 
-                // add current to the close list
-                closeHash[neighborKey] = true;
-
-                var currentDirIndex = dirIndexes[currentKey];
-                var currentDist = costFromStart[currentKey];
-
-                for (var dirIndex = 0; dirIndex < dirLen; dirIndex++) {
-
-                    var dirChange = Math.abs(dirIndex - currentDirIndex);
-
-                    if (dirChange > dirHalfLen) {
-
-                        dirChange = dirLen - dirChange;
+                // Check if we reached any endpoint
+                if (endPointsKeys.indexOf(currentKey) >= 0) {
+                    // We don't want to allow route to enter the end point in opposite direction.
+                    dirChange = getDirectionChange(currentDirAngle, getDirectionAngle(currentPoint, endCenter, dirLen));
+                    if (currentPoint.equals(endCenter) || dirChange < 180) {
+                        opt.previousDirAngle = currentDirAngle;
+                        return reconstructRoute(parents, currentPoint);
                     }
+                }
 
+                // Go over all possible directions and find neighbors.
+                for (var i = 0; i < dirLen; i++) {
+
+                    dir = dirs[i];
+                    dirChange = getDirectionChange(currentDirAngle, dir.angle);
                     // if the direction changed rapidly don't use this point
-                    if (dirChange > maxAllowedDirectionChange) {
-
+                    if (dirChange > opt.maxAllowedDirectionChange) {
                         continue;
                     }
 
-                    var dir = dirs[dirIndex];
-
-                    var neighborPoint = g.point(currentPoint).offset(dir.offsetX, dir.offsetY);
+                    var neighborPoint = currentPoint.clone().offset(dir.offsetX, dir.offsetY);
                     var neighborKey = neighborPoint.toString();
-
-                    if (closeHash[neighborKey]) {
-
+                    // Closed points from the openSet were already evaluated.
+                    if (openSet.isClose(neighborKey) || !map.isPointAccessible(neighborPoint)) {
                         continue;
                     }
 
-                    // is point accesible - no obstacle in the way
+                    // The current direction is ok to proccess.
+                    var costFromStart = currentDist + dir.cost + opt.penalties[dirChange];
 
-                    var mapKey = g.point(neighborPoint).snapToGrid(opt.mapGridSize).toString();
-
-                    var isAccesible = _.every(map[mapKey], function(obstacle) {
-                        return !obstacle.containsPoint(neighborPoint);
-                    });
-
-                    if (!isAccesible) {
-
-                        continue;
-                    }
-
-                    var inOpenSet = _.has(openHash, neighborKey);
-
-                    var costToNeighbor = currentDist + dir.cost;
-
-                    if (!inOpenSet || costToNeighbor < costFromStart[neighborKey]) {
-
+                    if (!openSet.isOpen(neighborKey) || costFromStart < costs[neighborKey]) {
+                        // neighbor point has not been processed yet or the cost of the path
+                        // from start is lesser than previously calcluated.
                         parents[neighborKey] = currentPoint;
-                        dirIndexes[neighborKey] = dirIndex;
-                        costFromStart[neighborKey] = costToNeighbor;
-
-                        totalCost[neighborKey] = costToNeighbor +
-                            opt.estimateCost(neighborPoint, endPoint) +
-                            penalties[dirChange];
-
-                        if (!inOpenSet) {
-
-                            var openIndex = _.sortedIndex(openSet, neighborKey, function(openKey) {
-
-                                return totalCost[openKey];
-                            });
-
-                            openSet.splice(openIndex, 0, neighborKey);
-                            openHash[neighborKey] = true;
-                        }
+                        costs[neighborKey] = costFromStart;
+                        openSet.add(neighborKey, costFromStart + estimateCost(neighborPoint, endPoints));
                     };
                 };
+
+                loopsRemain--;
             }
         }
 
         // no route found ('to' point wasn't either accessible or finding route took
         // way to much calculations)
         return opt.fallbackRoute(startCenter, endCenter, opt);
-    };
+    }
 
-    // initiation of the route finding
-    function router(oldVertices, opt) {
+    // resolve some of the options
+    function resolveOptions(opt) {
 
-        // resolve some of the options
         opt.directions = _.result(opt, 'directions');
         opt.penalties = _.result(opt, 'penalties');
         opt.paddingBox = _.result(opt, 'paddingBox');
 
+        _.each(opt.directions, function(direction) {
+
+            var point1 = new g.point(0, 0);
+            var point2 = new g.point(direction.offsetX, direction.offsetY);
+            var angle = g.normalizeAngle(point1.theta(point2));
+
+            direction.angle = angle;
+        });
+    }
+
+    // initiation of the route finding
+    function router(vertices, opt) {
+
+        resolveOptions(opt);
+
         // enable/disable linkView perpendicular option
         this.options.perpendicular = !!opt.perpendicular;
 
-        // As route changes its shape rapidly when we start finding route from different point
-        // it's necessary to start from the element that was not interacted with
-        // (the position was changed) at very last.
-        var reverseRouting = opt.reversed = (this.lastEndChange === 'source');
-
-        var sourceBBox = reverseRouting ? g.rect(this.targetBBox) : g.rect(this.sourceBBox);
-        var targetBBox = reverseRouting ? g.rect(this.sourceBBox) : g.rect(this.targetBBox);
-
         // expand boxes by specific padding
-        sourceBBox.moveAndExpand(opt.paddingBox);
-        targetBBox.moveAndExpand(opt.paddingBox);
-
-        // building an elements map
-
-        var link = this.model;
-        var graph = this.paper.model;
-
-        // source or target element could be excluded from set of obstacles
-        var excludedEnds = _.chain(opt.excludeEnds)
-                .map(link.get, link)
-                .pluck('id')
-                .map(graph.getCell, graph).value();
-
-        var mapGridSize = opt.mapGridSize;
-
-        var excludeAncestors = [];
-
-        var sourceId = link.get('source').id;
-        if (sourceId !== undefined) {
-            var source = graph.getCell(sourceId);
-            if (source !== undefined) {
-                excludeAncestors = _.union(excludeAncestors, _.map(source.getAncestors(), 'id'));
-            };
-        }
-
-        var targetId = link.get('target').id;
-        if (targetId !== undefined) {
-            var target = graph.getCell(targetId);
-            if (target !== undefined) {
-                excludeAncestors = _.union(excludeAncestors, _.map(target.getAncestors(), 'id'));
-            }
-        }
-
-        // builds a map of all elements for quicker obstacle queries (i.e. is a point contained
-        // in any obstacle?) (a simplified grid search)
-        // The paper is divided to smaller cells, where each of them holds an information which
-        // elements belong to it. When we query whether a point is in an obstacle we don't need
-        // to go through all obstacles, we check only those in a particular cell.
-        var map = _.chain(graph.getElements())
-            // remove source and target element if required
-            .difference(excludedEnds)
-            // remove all elements whose type is listed in excludedTypes array
-            .reject(function(element) {
-                // reject any element which is an ancestor of either source or target
-                return _.contains(opt.excludeTypes, element.get('type')) || _.contains(excludeAncestors, element.id);
-            })
-            // change elements (models) to their bounding boxes
-            .invoke('getBBox')
-            // expand their boxes by specific padding
-            .invoke('moveAndExpand', opt.paddingBox)
-            // build the map
-            .foldl(function(res, bbox) {
-
-                var origin = bbox.origin().snapToGrid(mapGridSize);
-                var corner = bbox.corner().snapToGrid(mapGridSize);
-
-                for (var x = origin.x; x <= corner.x; x += mapGridSize) {
-                    for (var y = origin.y; y <= corner.y; y += mapGridSize) {
-
-                        var gridKey = x + '@' + y;
-
-                        res[gridKey] = res[gridKey] || [];
-                        res[gridKey].push(bbox);
-                    }
-                }
-
-                return res;
-
-            }, {}).value();
+        var sourceBBox = g.rect(this.sourceBBox).moveAndExpand(opt.paddingBox);
+        var targetBBox = g.rect(this.targetBBox).moveAndExpand(opt.paddingBox);
 
         // pathfinding
-
+        var map = (new ObstacleMap(opt)).build(this.paper.model, this.model);
+        var oldVertices = _.map(vertices, g.point);
         var newVertices = [];
-
-        var points = _.map(oldVertices, g.point);
-
-        var tailPoint = sourceBBox.center();
+        var tailPoint = sourceBBox.center().snapToGrid(opt.step);
 
         // find a route by concating all partial routes (routes need to go through the vertices)
         // startElement -> vertex[1] -> ... -> vertex[n] -> endElement
-        for (var i = 0, len = points.length; i <= len; i++) {
+        for (var i = 0, len = oldVertices.length; i <= len; i++) {
 
             var partialRoute = null;
 
             var from = to || sourceBBox;
-            var to = points[i];
+            var to = oldVertices[i];
 
             if (!to) {
 
@@ -9181,19 +9580,17 @@ joint.routers.manhattan = (function() {
             var leadPoint = _.first(partialRoute);
 
             if (leadPoint && leadPoint.equals(tailPoint)) {
-
                 // remove the first point if the previous partial route had the same point as last
                 partialRoute.shift();
             }
 
             tailPoint = _.last(partialRoute) || tailPoint;
 
-            newVertices = newVertices.concat(partialRoute);
+            Array.prototype.push.apply(newVertices, partialRoute);
         };
 
-        // we might have to reverse the result if we swapped source and target at the beginning
-        return reverseRouting ? newVertices.reverse() : newVertices;
-    };
+        return newVertices;
+    }
 
     // public function
     return function(vertices, opt, linkView) {
@@ -9201,7 +9598,7 @@ joint.routers.manhattan = (function() {
         return router.call(linkView, vertices, _.extend({}, config, opt));
     };
 
-})();
+})(g, _);
 
 joint.routers.metro = (function() {
 
@@ -9232,7 +9629,7 @@ joint.routers.metro = (function() {
                 { offsetX: step  , offsetY: -step , cost: diagonalCost }
             ];
         },
-
+        maxAllowedDirectionChange: 45,
         // a simple route used in situations, when main routing method fails
         // (exceed loops, inaccessible).
         fallbackRoute: function(from, to, opts) {
@@ -9406,6 +9803,280 @@ joint.connectors.smooth = function(sourcePoint, targetPoint, vertices) {
 
     return d.join(' ');
 };
+
+joint.connectors.jumpover = (function(_, g) {
+
+    // default size of jump if not specified in options
+    var JUMP_SIZE = 5;
+
+    // default size of jump if not specified in options
+    var JUMP_TYPES = ['arc', 'gap'];
+
+    // takes care of math. error for case when jump is too close to end of line
+    var CLOSE_PROXIMITY_PADDING = 1;
+
+    /**
+     * Transform start/end and vertices into series of lines
+     * @param {g.point} sourcePoint start point
+     * @param {g.point} targetPoint end point
+     * @param {g.point[]} vertices optional list of vertices
+     * @return {g.line[]} [description]
+     */
+    function createLines(sourcePoint, targetPoint, vertices) {
+        // make a flattened array of all points
+        var points = [].concat(sourcePoint, vertices, targetPoint);
+        return points.reduce(function(resultLines, point, idx) {
+            // if there is a next point, make a line with it
+            var nextPoint = points[idx + 1];
+            if (nextPoint != null) {
+                resultLines[idx] = g.line(point, nextPoint);
+            }
+            return resultLines;
+        }, []);
+    }
+
+    function setupUpdating(jumpOverLinkView) {
+        var updateList = jumpOverLinkView.paper._jumpOverUpdateList;
+
+        // first time setup for this paper
+        if (updateList == null) {
+            updateList = jumpOverLinkView.paper._jumpOverUpdateList = [];
+            jumpOverLinkView.paper.on('cell:pointerup', updateJumpOver);
+        }
+
+        // add this link to a list so it can be updated when some other link is updated
+        if (updateList.indexOf(jumpOverLinkView) < 0) {
+            updateList.push(jumpOverLinkView);
+
+            // watch for change of connector type or removal of link itself
+            // to remove the link from a list of jump over connectors
+            jumpOverLinkView.listenToOnce(jumpOverLinkView.model, 'change:connector remove', function() {
+                updateList.splice(updateList.indexOf(jumpOverLinkView), 1);
+            });
+        }
+    }
+
+    /**
+     * Handler for a batch:stop event to force
+     * update of all registered links with jump over connector
+     * @param {object} batchEvent optional object with info about batch
+     */
+    function updateJumpOver() {
+        var updateList = this._jumpOverUpdateList;
+        for (var i = 0; i < updateList.length; i++) {
+            updateList[i].update();
+        }
+    }
+
+    /**
+     * Utility function to collect all intersection poinst of a single
+     * line against group of other lines.
+     * @param {g.line} line where to find points
+     * @param {g.line[]} crossCheckLines lines to cross
+     * @return {g.point[]} list of intersection points
+     */
+    function findLineIntersections(line, crossCheckLines) {
+        return _(crossCheckLines).map(function(crossCheckLine) {
+            return line.intersection(crossCheckLine);
+        }).compact().value();
+    }
+
+    /**
+     * Sorting function for list of points by their distance.
+     * @param {g.point} p1 first point
+     * @param {g.point} p2 second point
+     * @return {number} squared distance between points
+     */
+    function sortPoints(p1, p2) {
+        return g.line(p1, p2).squaredLength();
+    }
+
+    /**
+     * Split input line into multiple based on intersection points.
+     * @param {g.line} line input line to split
+     * @param {g.point[]} intersections poinst where to split the line
+     * @param {number} jumpSize the size of jump arc (length empty spot on a line)
+     * @return {g.line[]} list of lines being split
+     */
+    function createJumps(line, intersections, jumpSize) {
+        return intersections.reduce(function(resultLines, point, idx) {
+            // skipping points that were merged with the previous line
+            // to make bigger arc over multiple lines that are close to each other
+            if (point.skip === true) {
+                return resultLines;
+            }
+
+            // always grab the last line from buffer and modify it
+            var lastLine = resultLines.pop() || line;
+
+            // calculate start and end of jump by moving by a given size of jump
+            var jumpStart = g.point(point).move(lastLine.start, -(jumpSize));
+            var jumpEnd = g.point(point).move(lastLine.start, +(jumpSize));
+
+            // now try to look at the next intersection point
+            var nextPoint = intersections[idx + 1];
+            if (nextPoint != null) {
+                var distance = jumpEnd.distance(nextPoint);
+                if (distance <= jumpSize) {
+                    // next point is close enough, move the jump end by this
+                    // difference and mark the next point to be skipped
+                    jumpEnd = nextPoint.move(lastLine.start, distance);
+                    nextPoint.skip = true;
+                }
+            } else {
+                // this block is inside of `else` as an optimization so the distance is
+                // not calculated when we know there are no other intersection points
+                var endDistance = jumpStart.distance(lastLine.end);
+                // if the end is too close to possible jump, draw remaining line instead of a jump
+                if (endDistance < jumpSize * 2 + CLOSE_PROXIMITY_PADDING) {
+                    resultLines.push(lastLine);
+                    return resultLines;
+                }
+            }
+
+            if (resultLines.length > 0) {
+                var startDistance = jumpEnd.distance(resultLines[0].start);
+                if (startDistance < jumpSize * 2 + CLOSE_PROXIMITY_PADDING) {
+                    // if the start of line is too close to jump, draw that line instead of a jump
+                    resultLines.push(lastLine);
+                    return resultLines;
+                }
+            }
+
+            // finally create a jump line
+            var jumpLine = g.line(jumpStart, jumpEnd);
+            // it's just simple line but with a `isJump` property
+            jumpLine.isJump = true;
+
+            resultLines.push(
+                g.line(lastLine.start, jumpStart),
+                jumpLine,
+                g.line(jumpEnd, lastLine.end)
+            );
+            return resultLines;
+        }, []);
+    }
+
+    /**
+     * Assemble `D` attribute of a SVG path by iterating given lines.
+     * @param {g.line[]} lines source lines to use
+     * @param {number} jumpSize the size of jump arc (length empty spot on a line)
+     * @return {string}
+     */
+    function buildPath(lines, jumpSize, jumpType) {
+        // first move to the start of a first line
+        var start = ['M', lines[0].start.x, lines[0].start.y];
+
+        // make a paths from lines
+        var paths = _(lines).map(function(line) {
+            if (line.isJump) {
+                if (jumpType === 'arc') {
+                    var diff = line.start.difference(line.end);
+                    // determine rotation of arc based on difference between points
+                    var xAxisRotate = Number(diff.x < 0 && diff.y < 0);
+                    // for a jump line we create a arc instead
+                    return ['A', jumpSize, jumpSize, 0, 0, xAxisRotate, line.end.x, line.end.y];
+                } else if (jumpType === 'gap') {
+                    return ['M', line.end.x, line.end.y];
+                }
+            }
+            return ['L', line.end.x, line.end.y];
+        }).flatten().value();
+
+        return [].concat(start, paths).join(' ');
+    }
+
+    /**
+     * Actual connector function that will be run on every update.
+     * @param {g.point} sourcePoint start point of this link
+     * @param {g.point} targetPoint end point of this link
+     * @param {g.point[]} vertices of this link
+     * @param {object} opts options
+     * @property {number} size optional size of a jump arc
+     * @return {string} created `D` attribute of SVG path
+     */
+    return function(sourcePoint, targetPoint, vertices, opts) { // eslint-disable-line max-params
+
+        setupUpdating(this);
+
+        var jumpSize = opts.size || JUMP_SIZE;
+        var jumpType = opts.jump && ('' + opts.jump).toLowerCase();
+
+        // grab the first jump type as a default if specified one is invalid
+        if (JUMP_TYPES.indexOf(jumpType) === -1) {
+            jumpType = JUMP_TYPES[0];
+        }
+
+        var paper = this.paper;
+        var graph = paper.model;
+        var allLinks = graph.getLinks();
+
+        // there is just one link, draw it directly
+        if (allLinks.length === 1) {
+            return buildPath(
+                createLines(sourcePoint, targetPoint, vertices),
+                jumpSize, jumpType
+            );
+        }
+
+        var thisModel = this.model;
+        var thisIndex = allLinks.indexOf(thisModel);
+
+        // filter out links that are above this one and  have the same connector type
+        // otherwise there would double hoops for each intersection
+        var links = allLinks.filter(function(link, idx) {
+            if (idx > thisIndex) {
+                var connector = link.get('connector');
+                return !(connector && connector.name === 'jumpover');
+            }
+            return true;
+        });
+
+        // find views for all links
+        var linkViews = links.map(function(link) {
+            return paper.findViewByModel(link);
+        });
+
+        // create lines for each link
+        var linkLines = linkViews.map(function(linkView) {
+            if (linkView == null) {
+                return [];
+            }
+            return createLines(
+                linkView.sourcePoint,
+                linkView.targetPoint,
+                linkView.route
+            );
+        });
+
+        var thisLines = linkLines[thisIndex];
+
+        // transform lines for this link by splitting with jump lines at
+        // points of intersection with other links
+        var jumpingLines = thisLines.reduce(function(resultLines, thisLine) {
+            // iterate all links and grab the intersections with this line
+            // these are then sorted by distance so the line can be split more easily
+            var intersections = _(links).map(function(link, i) {
+                // don't intersection with itself
+                if (link === thisModel) {
+                    return null;
+                }
+                return findLineIntersections(thisLine, linkLines[i]);
+            }).flatten().compact().sortBy(_.partial(sortPoints, thisLine.start)).value();
+
+            if (intersections.length > 0) {
+                // split the line based on found intersection points
+                resultLines.push.apply(resultLines, createJumps(thisLine, intersections, jumpSize));
+            } else {
+                // without any intersection the line goes uninterrupted
+                resultLines.push(thisLine);
+            }
+            return resultLines;
+        }, []);
+
+        return buildPath(jumpingLines, jumpSize, jumpType);
+    };
+}(_, g));
 
 //      JointJS library.
 //      (c) 2011-2013 client IO
@@ -10025,6 +10696,7 @@ joint.shapes.pn.Link = joint.dia.Link.extend({
 
     defaults: joint.util.deepSupplement({
 
+        type: 'pn.Link',
         attrs: { '.marker-target': { d: 'M 10 0 L 0 5 L 10 10 z' }}
 
     }, joint.dia.Link.prototype.defaults)
@@ -10861,7 +11533,8 @@ joint.layout.DirectedGraph = {
                 .filter(function(v) { return glGraph.children(v).length > 0; })
                 .map(graph.getCell, graph)
                 .sortBy(function(cluster) { return -cluster.getAncestors().length; })
-                .invoke('fitEmbeds', { padding: opt.clusterPadding });
+                .invoke('fitEmbeds', { padding: opt.clusterPadding })
+                .value();
         }
 
         // Return an object with height and width of the graph.

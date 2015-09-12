@@ -31,8 +31,17 @@ V = Vectorizer = (function() {
         return 'v-' + id;
     }
 
+    // Replace all spaces with the Unicode No-break space (http://www.fileformat.info/info/unicode/char/a0/index.htm).
+    // IE would otherwise collapse all spaces into one. This is used in the text() method but it is
+    // also exposed so that the programmer can use it in case he needs to. This is useful e.g. in tests
+    // when you want to compare the actual DOM text content without having to add the unicode character in
+    // the place of all spaces.
+    function sanitizeText(text) {
+        return (text || '').replace(/ /g, '\u00A0');
+    }
+
     function isObject(o) {
-        return Object(o) === Object(o);
+        return o === Object(o);
     }
 
     function isArray(o) {
@@ -44,9 +53,33 @@ V = Vectorizer = (function() {
     function createSvgDocument(content) {
 
         var svg = '<svg xmlns="' + ns.xmlns + '" xmlns:xlink="' + ns.xlink + '" version="' + SVGversion + '">' + (content || '') + '</svg>';
-        var parser = new DOMParser();
-        parser.async = false;
-        return parser.parseFromString(svg, 'text/xml').documentElement;
+        var xml = parseXML(svg, { async: false });
+        return xml.documentElement;
+    }
+
+    function parseXML(data, opt) {
+
+        opt = opt || {};
+
+        var xml;
+
+        try {
+            var parser = new DOMParser();
+
+            if (typeof opt.async !== 'undefined') {
+                parser.async = opt.async;
+            }
+
+            xml = parser.parseFromString(data, 'text/xml');
+        } catch (error) {
+            xml = undefined;
+        }
+
+        if (!xml || xml.getElementsByTagName('parsererror').length) {
+            throw new Error('Invalid XML: ' + data);
+        }
+
+        return xml;
     }
 
     // Create SVG element.
@@ -304,12 +337,9 @@ V = Vectorizer = (function() {
             try {
 
                 box = this.node.getBBox();
-
-                // Opera returns infinite values in some cases.
-                // Note that Infinity | 0 produces 0 as opposed to Infinity || 0.
-                // We also have to create new object as the standard says that you can't
+                // We are creating a new object as the standard says that you can't
                 // modify the attributes of a bbox.
-                box = { x: box.x | 0, y: box.y | 0, width: box.width | 0, height: box.height | 0 };
+                box = { x: box.x, y: box.y, width: box.width, height: box.height };
 
             } catch (e) {
 
@@ -334,6 +364,9 @@ V = Vectorizer = (function() {
 
         text: function(content, opt) {
 
+            // Replace all spaces with the Unicode No-break space (http://www.fileformat.info/info/unicode/char/a0/index.htm).
+            // IE would otherwise collapse all spaces into one.
+            content = sanitizeText(content);
             opt = opt || {};
             var lines = content.split('\n');
             var i = 0;
@@ -466,11 +499,12 @@ V = Vectorizer = (function() {
 
                 } else {
 
-                    // Make sure the textContent is never empty. If it is, add an additional
-                    // space (an invisible character) so that following lines are correctly
+                    // Make sure the textContent is never empty. If it is, add a dummy
+                    // character and make it invisible, making the following lines correctly
                     // relatively positioned. `dy=1em` won't work with empty lines otherwise.
                     vLine.addClass('v-empty-line');
-                    vLine.node.textContent = ' ';
+                    vLine.node.style.opacity = 0;
+                    vLine.node.textContent = '-';
                 }
 
                 V(textNode).append(vLine);
@@ -1300,7 +1334,7 @@ V = Vectorizer = (function() {
         return found;
     };
 
-    // Shift all the textg annotations after character `index` by `offset` positions.
+    // Shift all the text annotations after character `index` by `offset` positions.
     V.shiftAnnotations = function(annotations, index, offset) {
 
         if (!annotations) return annotations;
@@ -1315,6 +1349,8 @@ V = Vectorizer = (function() {
 
         return annotations;
     };
+
+    V.sanitizeText = sanitizeText;
 
     return V;
 

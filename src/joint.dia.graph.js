@@ -3,29 +3,30 @@
 
 joint.dia.GraphCells = Backbone.Collection.extend({
 
-    initialize: function() {
+    cellNamespace: joint.shapes,
+
+    initialize: function(models, opt) {
 
         // Backbone automatically doesn't trigger re-sort if models attributes are changed later when
         // they're already in the collection. Therefore, we're triggering sort manually here.
         this.on('change:z', this.sort, this);
+
+        // Set the optional namespace where all model classes are defined.
+        if (opt.cellNamespace) {
+            this.cellNamespace = opt.cellNamespace;
+        }
     },
 
     model: function(attrs, options) {
 
-        if (attrs.type === 'link') {
+        var namespace = options.collection.cellNamespace;
 
-            return new joint.dia.Link(attrs, options);
-        }
+        // Find the model class in the namespace or use the default one.
+        var ModelClass = (attrs.type === 'link')
+            ? joint.dia.Link
+            : joint.util.getByPath(namespace, attrs.type, '.') || joint.dia.Element;
 
-        var module = attrs.type.split('.')[0];
-        var entity = attrs.type.split('.')[1];
-
-        if (joint.shapes[module] && joint.shapes[module][entity]) {
-
-            return new joint.shapes[module][entity](attrs, options);
-        }
-
-        return new joint.dia.Element(attrs, options);
+        return new ModelClass(attrs, options);
     },
 
     // `comparator` makes it easy to sort cells based on their `z` index.
@@ -45,6 +46,8 @@ joint.dia.GraphCells = Backbone.Collection.extend({
 
         var links = this.filter(function(cell) {
 
+            if (!cell.isLink()) return false;
+
             var source = cell.get('source');
             var target = cell.get('target');
 
@@ -59,6 +62,8 @@ joint.dia.GraphCells = Backbone.Collection.extend({
             var embeddedCells = model.getEmbeddedCells({ deep: true });
 
             _.each(this.difference(links, embeddedCells), function(cell) {
+
+                if (!cell.isLink()) return;
 
                 if (opt.outbound) {
 
@@ -82,6 +87,41 @@ joint.dia.GraphCells = Backbone.Collection.extend({
         }
 
         return links;
+    },
+
+    getNeighbors: function(model, opt) {
+
+        opt = opt || {};
+
+        var neighbors = _.transform(this.getConnectedLinks(model, opt), function(res, link) {
+
+            var source = link.get('source');
+            var target = link.get('target');
+            var loop = link.hasLoop(opt);
+
+            // Discard if it is a point, or if the neighbor was already added.
+            if (opt.inbound && _.has(source, 'id') && !res[source.id]) {
+
+                var sourceElement = this.get(source.id);
+
+                if (loop || (sourceElement !== model && (!opt.deep || !sourceElement.isEmbeddedIn(model)))) {
+                    res[source.id] = sourceElement;
+                }
+            }
+
+            // Discard if it is a point, or if the neighbor was already added.
+            if (opt.outbound && _.has(target, 'id') && !res[target.id]) {
+
+                var targetElement = this.get(target.id);
+
+                if (loop || targetElement !== model && (!opt.deep || !targetElement.isEmbeddedIn(model))) {
+                    res[target.id] = targetElement;
+                }
+            }
+
+        }, {}, this);
+
+        return _.values(neighbors);
     },
 
     getCommonAncestor: function(/* cells */) {
@@ -143,16 +183,21 @@ joint.dia.Graph = Backbone.Model.extend({
 
     initialize: function(attrs, opt) {
 
+        opt = opt || {};
+
         // Passing `cellModel` function in the options object to graph allows for
         // setting models based on attribute objects. This is especially handy
         // when processing JSON graphs that are in a different than JointJS format.
-        this.set('cells', new joint.dia.GraphCells([], { model: opt && opt.cellModel }));
+        Backbone.Model.prototype.set.call(this, 'cells', new joint.dia.GraphCells([], {
+            model: opt.cellModel,
+            cellNamespace: opt.cellNamespace
+        }));
 
         // Make all the events fired in the `cells` collection available.
         // to the outside world.
         this.get('cells').on('all', this.trigger, this);
 
-        this.get('cells').on('remove', this.removeCell, this);
+        this.get('cells').on('remove', this._removeCell, this);
     },
 
     toJSON: function() {
@@ -171,26 +216,71 @@ joint.dia.Graph = Backbone.Model.extend({
             throw new Error('Graph JSON must contain cells array.');
         }
 
-        this.set(_.omit(json, 'cells'), opt);
-        this.resetCells(json.cells, opt);
+        return this.set(json, opt);
+    },
+
+    set: function(key, val, opt) {
+
+        var attrs;
+
+        // Handle both `key`, value and {key: value} style arguments.
+        if (typeof key === 'object') {
+            attrs = key;
+            opt = val;
+        } else {
+            (attrs = {})[key] = val;
+        }
+
+        // Make sure that `cells` attribute is handled separately via resetCells().
+        if (attrs.hasOwnProperty('cells')) {
+            this.resetCells(attrs.cells, opt);
+            attrs = _.omit(attrs, 'cells');
+        }
+
+        // The rest of the attributes are applied via original set method.
+        return Backbone.Model.prototype.set.call(this, attrs, opt);
     },
 
     clear: function(opt) {
 
-        this.trigger('batch:start');
-        this.get('cells').remove(this.get('cells').models, opt);
-        this.trigger('batch:stop');
+        opt = _.extend({}, opt, { clear: true });
+
+        var collection = this.get('cells');
+
+        if (collection.length === 0) return this;
+
+        this.trigger('batch:start', { batchName: 'clear' });
+
+        // The elements come after the links.
+        var cells = collection.sortBy(function(cell) {
+            return cell.isLink() ? 1 : 2;
+        });
+
+        do {
+
+            // Remove all the cells one by one.
+            // Note that all the links are removed first, so it's
+            // safe to remove the elements without removing the connected
+            // links first.
+            cells.shift().remove(opt);
+
+        } while (cells.length > 0);
+
+        this.trigger('batch:stop', { batchName: 'clear' });
+
+        return this;
     },
 
     _prepareCell: function(cell) {
 
-        if (cell instanceof Backbone.Model && _.isUndefined(cell.get('z'))) {
+        var attrs = (cell instanceof Backbone.Model) ? cell.attributes : cell;
 
-            cell.set('z', this.maxZIndex() + 1, { silent: true });
+        if (_.isUndefined(attrs.z)) {
+            attrs.z = this.maxZIndex() + 1;
+        }
 
-        } else if (_.isUndefined(cell.z)) {
-
-            cell.z = this.maxZIndex() + 1;
+        if (!_.isString(attrs.type)) {
+            throw new TypeError('dia.Graph: cell type must be a string.');
         }
 
         return cell;
@@ -237,20 +327,23 @@ joint.dia.Graph = Backbone.Model.extend({
         return this;
     },
 
-    removeCell: function(cell, collection, options) {
+    _removeCell: function(cell, collection, options) {
 
-        // Applications might provide a `disconnectLinks` option set to `true` in order to
-        // disconnect links when a cell is removed rather then removing them. The default
-        // is to remove all the associated links.
-        if (options && options.disconnectLinks) {
+        options = options || {};
 
-            this.disconnectLinks(cell, options);
+        if (!options.clear) {
+            // Applications might provide a `disconnectLinks` option set to `true` in order to
+            // disconnect links when a cell is removed rather then removing them. The default
+            // is to remove all the associated links.
+            if (options.disconnectLinks) {
 
-        } else {
+                this.disconnectLinks(cell, options);
 
-            this.removeLinks(cell, options);
+            } else {
+
+                this.removeLinks(cell, options);
+            }
         }
-
         // Silently remove the cell from the cells collection. Silently, because
         // `joint.dia.Cell.prototype.remove` already triggers the `remove` event which is
         // then propagated to the graph model. If we didn't remove the cell silently, two `remove` events
@@ -262,6 +355,11 @@ joint.dia.Graph = Backbone.Model.extend({
     getCell: function(id) {
 
         return this.get('cells').get(id);
+    },
+
+    getCells: function() {
+
+        return this.get('cells').toArray();
     },
 
     getElements: function() {
@@ -286,35 +384,9 @@ joint.dia.Graph = Backbone.Model.extend({
         return this.get('cells').getConnectedLinks(model, opt);
     },
 
-    getNeighbors: function(el) {
+    getNeighbors: function(model, opt) {
 
-        var links = this.getConnectedLinks(el);
-        var neighbors = [];
-        var cells = this.get('cells');
-
-        _.each(links, function(link) {
-
-            var source = link.get('source');
-            var target = link.get('target');
-
-            // Discard if it is a point.
-            if (!source.x) {
-                var sourceElement = cells.get(source.id);
-                if (sourceElement !== el) {
-
-                    neighbors.push(sourceElement);
-                }
-            }
-            if (!target.x) {
-                var targetElement = cells.get(target.id);
-                if (targetElement !== el) {
-
-                    neighbors.push(targetElement);
-                }
-            }
-        });
-
-        return neighbors;
+        return this.get('cells').getNeighbors(model, opt);
     },
 
     // Disconnect links connected to the cell `model`.
@@ -332,7 +404,7 @@ joint.dia.Graph = Backbone.Model.extend({
         _.invoke(this.getConnectedLinks(model), 'remove', options);
     },
 
-    // Find all views at given point
+    // Find all elements at given point
     findModelsFromPoint: function(p) {
 
         return _.filter(this.getElements(), function(el) {
@@ -340,11 +412,27 @@ joint.dia.Graph = Backbone.Model.extend({
         });
     },
 
-    // Find all views in given area
+    // Find all elements in given area
     findModelsInArea: function(r) {
 
         return _.filter(this.getElements(), function(el) {
             return el.getBBox().intersect(r);
+        });
+    },
+
+    // Find all elements under the given element.
+    findModelsUnderElement: function(element, opt) {
+
+        opt = _.defaults(opt || {}, { searchBy: 'bbox' });
+
+        var bbox = element.getBBox();
+        var elements = (opt.searchBy == 'bbox')
+            ? this.findModelsInArea(bbox)
+            : this.findModelsFromPoint(bbox[opt.searchBy]());
+
+        // don't account element itself or any of its descendents
+        return _.reject(elements, function(el) {
+            return element.id == el.id || el.isEmbeddedIn(element);
         });
     },
 
