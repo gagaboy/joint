@@ -41,12 +41,10 @@ V = Vectorizer = (function() {
     }
 
     function isObject(o) {
-        return o === Object(o);
+        return o && (typeof o === 'object');
     }
 
-    function isArray(o) {
-        return Object.prototype.toString.call(o) == '[object Array]';
-    }
+    var isArray = Array.isArray;
 
     // Create an SVG document element.
     // If `content` is passed, it will be used as the SVG content of the `<svg>` root element.
@@ -255,6 +253,31 @@ V = Vectorizer = (function() {
 
     VElement.prototype = {
 
+        /**
+         * @param {SVGGElement} toElem
+         * @returns {SVGMatrix}
+         */
+        getTransformToElement: function(toElem) {
+            return toElem.getScreenCTM().inverse().multiply(this.node.getScreenCTM());
+        },
+
+        /**
+         * @param {SVGMatrix} matrix
+         * @returns {VElement, SVGMatrix} Setter / Getter
+         */
+        transform: function(matrix) {
+
+            if (typeof matrix === 'undefined') {
+                return (this.node.parentNode)
+                    ? this.getTransformToElement(this.node.parentNode)
+                    : this.node.getScreenCTM();
+            }
+
+            var svgTransform = V.createSVGTransform(matrix);
+            this.node.transform.baseVal.appendItem(svgTransform);
+            return this;
+        },
+
         translate: function(tx, ty, opt) {
 
             opt = opt || {};
@@ -357,7 +380,7 @@ V = Vectorizer = (function() {
                 return box;
             }
 
-            var matrix = this.node.getTransformToElement(target || this.node.ownerSVGElement);
+            var matrix = this.getTransformToElement(target || this.node.ownerSVGElement);
 
             return V.transformRect(box, matrix);
         },
@@ -624,14 +647,14 @@ V = Vectorizer = (function() {
 
         findParentByClass: function(className, terminator) {
 
-            terminator = terminator || this.node.ownerSVGElement;
-
+            var ownerSVGElement = this.node.ownerSVGElement;
             var node = this.node.parentNode;
 
-            while (node && node !== terminator) {
+            while (node && node !== terminator && node !== ownerSVGElement) {
 
-                if (V(node).hasClass(className)) {
-                    return V(node);
+                var vel = V(node);
+                if (vel.hasClass(className)) {
+                    return vel;
                 }
 
                 node = node.parentNode;
@@ -652,7 +675,7 @@ V = Vectorizer = (function() {
             try {
 
                 var globalPoint = p.matrixTransform(svg.getScreenCTM().inverse());
-                var globalToLocalMatrix = this.node.getTransformToElement(svg).inverse();
+                var globalToLocalMatrix = this.getTransformToElement(svg).inverse();
 
             } catch (e) {
                 // IE9 throws an exception in odd cases. (`Unexpected call to method or property access`)
@@ -705,7 +728,7 @@ V = Vectorizer = (function() {
             translateFinal.setTranslate(position.x + (position.x - finalPosition.x), position.y + (position.y - finalPosition.y));
 
             // 4. Apply transformations.
-            var ctm = this.node.getTransformToElement(target);
+            var ctm = this.getTransformToElement(target);
             var transform = svg.createSVGTransform();
             transform.setMatrix(
                 translateFinal.matrix.multiply(
@@ -889,7 +912,7 @@ V = Vectorizer = (function() {
                     parseFloat(this.attr('height'))
                 );
                 // Get the rect transformation matrix with regards to the SVG document.
-                var rectMatrix = this.node.getTransformToElement(target);
+                var rectMatrix = this.getTransformToElement(target);
                 // Decompose the matrix to find the rotation angle.
                 var rectMatrixComponents = V.decomposeMatrix(rectMatrix);
                 // Now we want to rotate the rectangle back so that we
@@ -911,7 +934,7 @@ V = Vectorizer = (function() {
                     var sample = samples[i];
                     // Convert the sample point in the local coordinate system to the global coordinate system.
                     var gp = V.createSVGPoint(sample.x, sample.y);
-                    gp = gp.matrixTransform(this.node.getTransformToElement(target));
+                    gp = gp.matrixTransform(this.getTransformToElement(target));
                     sample = g.point(gp);
                     var centerDistance = sample.distance(center);
                     // Penalize a higher distance to the reference point by 10%.
@@ -1105,7 +1128,14 @@ V = Vectorizer = (function() {
         return svgMatrix;
     };
 
-    V.createSVGTransform = function() {
+    V.createSVGTransform = function(matrix) {
+
+        if (typeof matrix !== 'undefined') {
+            if (!(matrix instanceof SVGMatrix)) {
+                matrix = V.createSVGMatrix(matrix);
+            }
+            return svgDocument.createSVGTransformFromMatrix(matrix);
+        }
 
         return svgDocument.createSVGTransform();
     };
@@ -1144,6 +1174,11 @@ V = Vectorizer = (function() {
         var maxY = Math.max(corner1.y, corner2.y, corner3.y, corner4.y);
 
         return { x: minX, y: minY, width: maxX - minX, height: maxY - minY };
+    };
+
+    V.transformPoint = function(p, matrix) {
+
+        return V.createSVGPoint(p.x, p.y).matrixTransform(matrix);
     };
 
     // Convert a style represented as string (e.g. `'fill="blue"; stroke="red"'`) to
@@ -1341,7 +1376,9 @@ V = Vectorizer = (function() {
 
         annotations.forEach(function(annotation) {
 
-            if (annotation.start >= index) {
+            if (annotation.start < index && annotation.end >= index) {
+                annotation.end += offset;
+            } else if (annotation.start >= index) {
                 annotation.start += offset;
                 annotation.end += offset;
             }

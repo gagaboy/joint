@@ -1,8 +1,8 @@
 //      JointJS library.
-//      (c) 2011-2013 client IO
+//      (c) 2011-2015 client IO
 
 
-joint.dia.Paper = Backbone.View.extend({
+joint.dia.Paper = joint.mvc.View.extend({
 
     className: 'paper',
 
@@ -12,10 +12,46 @@ joint.dia.Paper = Backbone.View.extend({
         height: 600,
         origin: { x: 0, y: 0 }, // x,y coordinates in top-left corner
         gridSize: 1,
+
+        /*
+            Whether or not to draw the grid lines on the paper's DOM element.
+        */
+        drawGrid: false,
+
+        /*
+            Default options used for the drawGrid() method.
+        */
+        drawGridOptions: {
+            color: '#aaa',
+            thickness: 1
+        },
+
         perpendicularLinks: false,
         elementView: joint.dia.ElementView,
         linkView: joint.dia.LinkView,
         snapLinks: false, // false, true, { radius: value }
+
+        // When set to FALSE, an element may not have more than 1 link with the same source and target element.
+        multiLinks: true,
+
+        // For adding custom guard logic.
+        guard: function(evt, view) {
+
+            // FALSE means the event isn't guarded.
+            return false;
+        },
+
+        highlighting: {
+            'default': {
+                name: 'stroke',
+                options: {
+                    padding: 3
+                }
+            }
+        },
+
+        // Prevent the default context menu from being displayed.
+        preventContextMenu: true,
 
         // Restrict the translation of elements by given bounding box.
         // Option accepts a boolean:
@@ -45,7 +81,7 @@ joint.dia.Paper = Backbone.View.extend({
 
         // A router that is used by links with no router defined on the model.
         // e.g. { name: 'oneSide', args: { padding: 10 }} or a function
-        defaultRouter: null,
+        defaultRouter: { name: 'normal' },
 
         /* CONNECTING */
 
@@ -103,30 +139,32 @@ joint.dia.Paper = Backbone.View.extend({
         'dblclick': 'mousedblclick',
         'click': 'mouseclick',
         'touchstart': 'pointerdown',
-        'mousemove': 'pointermove',
+        'touchend': 'mouseclick',
         'touchmove': 'pointermove',
+        'mousemove': 'pointermove',
         'mouseover .element': 'cellMouseover',
         'mouseover .link': 'cellMouseover',
         'mouseout .element': 'cellMouseout',
         'mouseout .link': 'cellMouseout',
-        'contextmenu': 'contextmenu'
+        'contextmenu': 'contextmenu',
+        'mousewheel': 'mousewheel',
+        'DOMMouseScroll': 'mousewheel'
     },
 
-    constructor: function(options) {
+    _highlights: [],
 
-        this._configure(options);
-        Backbone.View.apply(this, arguments);
-    },
-
-    _configure: function(options) {
-
-        if (this.options) options = _.merge({}, _.result(this, 'options'), options);
-        this.options = options;
-    },
-
-    initialize: function() {
+    init: function() {
 
         _.bindAll(this, 'pointerup');
+
+        this.model = this.options.model || new joint.dia.Graph;
+
+        // This is a fix for the case where two papers share the same options.
+        // Changing origin.x for one paper would change the value of origin.x for the other.
+        // This prevents that behavior.
+        this.options.origin = _.clone(this.options.origin);
+        this.options.defaultConnector = _.clone(this.options.defaultConnector);
+        this.options.highlighting = _.cloneDeep(this.options.highlighting);
 
         this.svg = V('svg').node;
         this.viewport = V('g').addClass('viewport').node;
@@ -137,13 +175,14 @@ joint.dia.Paper = Backbone.View.extend({
 
         this.$el.append(this.svg);
 
+        this.model.on('add', this.onCellAdded, this);
+        this.model.on('remove', this.removeView, this);
+        this.model.on('reset', this.resetViews, this);
+        this.model.on('sort', this._onSort, this);
+        this.model.on('batch:stop', this._onBatchStop, this);
+
         this.setOrigin();
         this.setDimensions();
-
-        this.listenTo(this.model, 'add', this.onCellAdded);
-        this.listenTo(this.model, 'remove', this.removeView);
-        this.listenTo(this.model, 'reset', this.resetViews);
-        this.listenTo(this.model, 'sort', this.sortViews);
 
         $(document).on('mouseup touchend', this.pointerup);
 
@@ -152,18 +191,29 @@ joint.dia.Paper = Backbone.View.extend({
         // Hash of all cell views.
         this._views = {};
 
-        // default cell highlighting
-        this.on({ 'cell:highlight': this.onCellHighlight, 'cell:unhighlight': this.onCellUnhighlight });
+        this.on('cell:highlight', this.onCellHighlight, this);
+        this.on('cell:unhighlight', this.onCellUnhighlight, this);
     },
 
-    remove: function() {
+    _onSort: function() {
+        if (!this.model.hasActiveBatch('add')) {
+            this.sortViews();
+        }
+    },
+
+    _onBatchStop: function(data) {
+        var name = data && data.batchName;
+        if (name === 'add' && !this.model.hasActiveBatch('add')) {
+            this.sortViews();
+        }
+    },
+
+    onRemove: function() {
 
         //clean up all DOM elements/views to prevent memory leaks
         this.removeViews();
 
         $(document).off('mouseup touchend', this.pointerup);
-
-        Backbone.View.prototype.remove.call(this);
     },
 
     setDimensions: function(width, height) {
@@ -184,6 +234,10 @@ joint.dia.Paper = Backbone.View.extend({
         V(this.viewport).translate(ox, oy, { absolute: true });
 
         this.trigger('translate', ox, oy);
+
+        if (this.options.drawGrid) {
+            this.drawGrid();
+        }
     },
 
     // Expand/shrink the paper to fit the content. Snap the width/height to the grid
@@ -345,14 +399,12 @@ joint.dia.Paper = Backbone.View.extend({
         // for non-default origin we need to take the viewport translation into account
         var viewportCTM = this.viewport.getCTM();
 
-        var bbox = g.rect({
+        return g.rect({
             x: crect.left - screenCTM.e + viewportCTM.e,
             y: crect.top - screenCTM.f + viewportCTM.f,
             width: crect.width,
             height: crect.height
         });
-
-        return bbox;
     },
 
     // Returns a geometry rectangle represeting the entire
@@ -475,7 +527,7 @@ joint.dia.Paper = Backbone.View.extend({
 
         // Make sure links are always added AFTER elements.
         // They wouldn't find their sources/targets in the DOM otherwise.
-        cells.sort(function(a, b) { return a instanceof joint.dia.Link ? 1 : -1; });
+        cells.sort(function(a) { return a instanceof joint.dia.Link ? 1 : -1; });
 
         return cells;
     },
@@ -609,6 +661,10 @@ joint.dia.Paper = Backbone.View.extend({
 
         this.trigger('scale', sx, sy, ox, oy);
 
+        if (this.options.drawGrid) {
+            this.drawGrid();
+        }
+
         return this;
     },
 
@@ -667,14 +723,16 @@ joint.dia.Paper = Backbone.View.extend({
     },
 
     // Find all views in given area
-    findViewsInArea: function(r) {
+    findViewsInArea: function(rect, opt) {
 
-        r = g.rect(r);
+        opt = _.defaults(opt || {}, { strict: false });
+        rect = g.rect(rect);
 
         var views = _.map(this.model.getElements(), this.findViewByModel, this);
+        var method = opt.strict ? 'containsRect' : 'intersect';
 
         return _.filter(views, function(view) {
-            return view && r.intersect(g.rect(view.vel.bbox(false, this.viewport)));
+            return view && rect[method](g.rect(view.vel.bbox(false, this.viewport)));
         }, this);
     },
 
@@ -701,9 +759,7 @@ joint.dia.Paper = Backbone.View.extend({
     // Exmaple: var paperPoint = paper.clientToLocalPoint({ x: evt.clientX, y: evt.clientY });
     clientToLocalPoint: function(p) {
 
-        var svgPoint = this.svg.createSVGPoint();
-        svgPoint.x = p.x;
-        svgPoint.y = p.y;
+        p = g.point(p);
 
         // This is a hack for Firefox! If there wasn't a fake (non-visible) rectangle covering the
         // whole SVG area, `$(paper.svg).offset()` used below won't work.
@@ -718,13 +774,73 @@ joint.dia.Paper = Backbone.View.extend({
         var scrollTop = document.body.scrollTop || document.documentElement.scrollTop;
         var scrollLeft = document.body.scrollLeft || document.documentElement.scrollLeft;
 
-        svgPoint.x += scrollLeft - paperOffset.left;
-        svgPoint.y += scrollTop - paperOffset.top;
+        p.offset(scrollLeft - paperOffset.left, scrollTop - paperOffset.top);
 
         // Transform point into the viewport coordinate system.
-        var pointTransformed = svgPoint.matrixTransform(this.viewport.getCTM().inverse());
+        return V.transformPoint(p, this.viewport.getCTM().inverse());
+    },
 
-        return pointTransformed;
+    linkAllowed: function(linkViewOrModel) {
+
+        var link;
+
+        if (linkViewOrModel instanceof joint.dia.Link) {
+            link = linkViewOrModel;
+        } else if (linkViewOrModel instanceof joint.dia.LinkView) {
+            link = linkViewOrModel.model;
+        } else {
+            throw new Error('Must provide link model or view.');
+        }
+
+        if (!this.options.multiLinks) {
+
+            // Do not allow multiple links to have the same source and target.
+
+            var source = link.get('source');
+            var target = link.get('target');
+
+            if (source.id && target.id) {
+
+                var sourceModel = link.getSourceElement();
+
+                if (sourceModel) {
+
+                    var connectedLinks = this.model.getConnectedLinks(sourceModel, {
+                        outbound: true,
+                        inbound: false
+                    });
+
+                    var numSameLinks = _.filter(connectedLinks, function(_link) {
+
+                        var _source = _link.get('source');
+                        var _target = _link.get('target');
+
+                        return _source && _source.id === source.id &&
+                                (!_source.port || (_source.port === source.port)) &&
+                                _target && _target.id === target.id &&
+                                (!_target.port || (_target.port === target.port));
+
+                    }).length;
+
+                    if (numSameLinks > 1) {
+                        return false;
+                    }
+                }
+            }
+        }
+
+        if (
+            !this.options.linkPinning &&
+            (
+                !_.has(link.get('source'), 'id') ||
+                !_.has(link.get('target'), 'id')
+            )
+        ) {
+            // Link pinning is not allowed and the link is not connected to the target.
+            return false;
+        }
+
+        return true;
     },
 
     getDefaultLink: function(cellView, magnet) {
@@ -739,12 +855,80 @@ joint.dia.Paper = Backbone.View.extend({
     // Cell highlighting
     // -----------------
 
-    onCellHighlight: function(cellView, el) {
-        V(el).addClass('highlighted');
+    onCellHighlight: function(cellView, magnetEl, opt) {
+
+        opt = opt || {};
+
+        /*
+            Expecting opt.highlighter to have the following structure:
+            {
+                name: 'highlighter-name',
+                options: {
+                    some: 'value'
+                }
+            }
+        */
+        if (_.isUndefined(opt.highlighter)) {
+
+            if (opt.embedding) {
+                opt.highlighter = this.options.highlighting['embedding'];
+            } else if (opt.connecting) {
+                opt.highlighter = this.options.highlighting['connecting'];
+            }
+
+            if (_.isUndefined(opt.highlighter)) {
+                opt.highlighter = this.options.highlighting['default'];
+            }
+        }
+
+        // Do nothing if opt.highlighter is falsey.
+        // This allows the case to not highlight cell(s) in certain cases.
+        // For example, if you want to NOT highlight when embedding elements.
+        if (!opt.highlighter) return;
+
+        opt = _.defaults(opt || {}, opt.highlighter.options);
+
+        var name = opt.highlighter.name;
+        var highlighter = joint.highlighters[name];
+
+        if (!highlighter) {
+            throw new Error('Unknown highlighter ("' + name + '")');
+        }
+
+        if (typeof highlighter.highlight !== 'function') {
+            throw new Error('Highlighter ("' + name + '") is missing required highlight() method');
+        }
+
+        if (typeof highlighter.unhighlight !== 'function') {
+            throw new Error('Highlighter ("' + name + '") is missing required unhighlight() method');
+        }
+
+        highlighter.highlight(cellView, magnetEl, _.clone(opt));
+
+        this._highlights[magnetEl.id] = {
+            cellView: cellView,
+            magnetEl: magnetEl,
+            opt: opt,
+            highlighter: highlighter
+        };
     },
 
-    onCellUnhighlight: function(cellView, el) {
-        V(el).removeClass('highlighted');
+    onCellUnhighlight: function(cellView, magnetEl) {
+
+        if (this._highlights[magnetEl.id]) {
+
+            var highlight = this._highlights[magnetEl.id];
+
+            // Use the cellView and magnetEl that were used by the highlighter.highlight() method.
+            cellView = highlight.cellView;
+            magnetEl = highlight.magnetEl;
+
+            var opt = highlight.opt;
+            var highlighter = highlight.highlighter;
+
+            highlighter.unhighlight(cellView, magnetEl, opt);
+            this._highlights[magnetEl.id] = null;
+        }
     },
 
     // Interaction.
@@ -791,13 +975,16 @@ joint.dia.Paper = Backbone.View.extend({
                 this.trigger('blank:pointerclick', evt, localPoint.x, localPoint.y);
             }
         }
-
-        this._mousemoved = 0;
     },
 
     // Guard guards the event received. If the event is not interesting, guard returns `true`.
     // Otherwise, it return `false`.
     guard: function(evt, view) {
+
+        if (this.options.guard && this.options.guard(evt, view)) {
+
+            return true;
+        }
 
         if (view && view.model && (view.model instanceof joint.dia.Cell)) {
 
@@ -814,6 +1001,11 @@ joint.dia.Paper = Backbone.View.extend({
     contextmenu: function(evt) {
 
         evt = joint.util.normalizeEvent(evt);
+
+        if (this.options.preventContextMenu) {
+            evt.preventDefault();
+        }
+
         var view = this.findView(evt.target);
         if (this.guard(evt, view)) return;
 
@@ -835,6 +1027,10 @@ joint.dia.Paper = Backbone.View.extend({
 
         var view = this.findView(evt.target);
         if (this.guard(evt, view)) return;
+
+        evt.preventDefault();
+
+        this._mousemoved = 0;
 
         var localPoint = this.snapToGrid({ x: evt.clientX, y: evt.clientY });
 
@@ -885,6 +1081,26 @@ joint.dia.Paper = Backbone.View.extend({
         }
     },
 
+    mousewheel: function(evt) {
+
+        evt = joint.util.normalizeEvent(evt);
+        var view = this.findView(evt.target);
+        if (this.guard(evt, view)) return;
+
+        var originalEvent = evt.originalEvent;
+        var localPoint = this.snapToGrid({ x: originalEvent.clientX, y: originalEvent.clientY });
+        var delta = Math.max(-1, Math.min(1, (originalEvent.wheelDelta || -originalEvent.detail)));
+
+        if (view) {
+
+            view.mousewheel(evt, localPoint.x, localPoint.y, delta);
+
+        } else {
+
+            this.trigger('blank:mousewheel', evt, localPoint.x, localPoint.y, delta);
+        }
+    },
+
     cellMouseover: function(evt) {
 
         evt = joint.util.normalizeEvent(evt);
@@ -903,5 +1119,54 @@ joint.dia.Paper = Backbone.View.extend({
             if (this.guard(evt, view)) return;
             view.mouseout(evt);
         }
+    },
+
+    setGridSize: function(gridSize) {
+
+        this.options.gridSize = gridSize;
+
+        if (this.options.drawGrid) {
+            this.drawGrid();
+        }
+
+        return this;
+    },
+
+    drawGrid: function(opt) {
+
+        opt = _.defaults(opt || {}, this.options.drawGridOptions);
+
+        var gridSize = this.options.gridSize;
+
+        if (gridSize <= 1) {
+            this.el.style['background-image'] = 'none';
+            return;
+        }
+
+        var currentScale = V(this.viewport).scale();
+        var scaleX = currentScale.sx;
+        var scaleY = currentScale.sy;
+        var originX = this.options.origin.x;
+        var originY = this.options.origin.y;
+        var gridX = gridSize * scaleX;
+        var gridY = gridSize * scaleY;
+
+        var canvas = document.createElement('canvas');
+
+        canvas.width = gridX;
+        canvas.height = gridY;
+
+        gridX = originX >= 0 ? originX % gridX : gridX + originX % gridX;
+        gridY = originY >= 0 ? originY % gridY : gridY + originY % gridY;
+
+        var context = canvas.getContext('2d');
+        context.beginPath();
+        context.rect(gridX, gridY, opt.thickness, opt.thickness);
+        context.fillStyle = opt.color;
+        context.fill();
+
+        var backgroundImage = canvas.toDataURL('image/png');
+        this.el.style['background-image'] = 'url("' + backgroundImage + '")';
     }
+
 });

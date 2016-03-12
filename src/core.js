@@ -1,5 +1,5 @@
 //      JointJS library.
-//      (c) 2011-2013 client IO
+//      (c) 2011-2015 client IO
 
 // Global namespace.
 
@@ -25,8 +25,71 @@ var joint = {
     // `joint.connectors` namespace.
     connectors: {},
 
+    // `joint.highlighters` namespace.
+    highlighters: {},
+
     // `joint.routers` namespace.
     routers: {},
+
+    // `joint.mvc` namespace.
+    mvc: {
+        views: {}
+    },
+
+    setTheme: function(theme, opt) {
+
+        opt = opt || {};
+
+        _.invoke(joint.mvc.views, 'setTheme', theme, opt);
+
+        // Update the default theme on the view prototype.
+        joint.mvc.View.prototype.options.theme = theme;
+    },
+
+    // `joint.env` namespace.
+    env: {
+
+        _results: {},
+
+        _tests: {
+
+            svgforeignobject: function() {
+                return !!document.createElementNS &&
+              /SVGForeignObject/.test(({}).toString.call(document.createElementNS('http://www.w3.org/2000/svg', 'foreignObject')));
+            }
+        },
+
+        addTest: function(name, fn) {
+
+            return joint.env._tests[name] = fn;
+        },
+
+        test: function(name) {
+
+            var fn = joint.env._tests[name];
+
+            if (!fn) {
+                throw new Error('Test not defined ("' + name + '"). Use `joint.env.addTest(name, fn) to add a new test.`');
+            }
+
+            var result = joint.env._results[name];
+
+            if (typeof result !== 'undefined') {
+                return result;
+            }
+
+            try {
+                result = fn();
+            } catch (error) {
+                result = false;
+            }
+
+            // Cache the test result.
+            joint.env._results[name] = result;
+
+            return result;
+        }
+    },
 
     util: {
 
@@ -374,8 +437,18 @@ var joint = {
             var textSpan = textElement.firstChild;
             var textNode = document.createTextNode('');
 
-            textSpan.appendChild(textNode);
+            // Prevent flickering
+            textElement.style.opacity = 0;
+            // Prevent FF from throwing an uncaught exception when `getBBox()`
+            // called on element that is not in the render tree (is not measurable).
+            // <tspan>.getComputedTextLength() returns always 0 in this case.
+            // Note that the `textElement` resp. `textSpan` can become hidden
+            // when it's appended to the DOM and a `display: none` CSS stylesheet
+            // rule gets applied.
+            textElement.style.display = 'block';
+            textSpan.style.display = 'block';
 
+            textSpan.appendChild(textNode);
             svgDocument.appendChild(textElement);
 
             if (!opt.svgDocument) {
@@ -815,7 +888,7 @@ var joint = {
                 var margin = _.isFinite(args.margin) ? args.margin : 2;
                 var width = _.isFinite(args.width) ? args.width : 1;
 
-                return _.template(tpl)({
+                return joint.util.template(tpl)({
                     color: args.color || 'blue',
                     opacity: _.isFinite(args.opacity) ? args.opacity : 1,
                     outerRadius: margin + width,
@@ -831,7 +904,7 @@ var joint = {
 
                 var tpl = '<filter><feFlood flood-color="${color}" flood-opacity="${opacity}" result="colored"/><feMorphology result="morphed" in="SourceGraphic" operator="dilate" radius="${width}"/><feComposite result="composed" in="colored" in2="morphed" operator="in"/><feGaussianBlur result="blured" in="composed" stdDeviation="${blur}"/><feBlend in="SourceGraphic" in2="blured" mode="normal"/></filter>';
 
-                return _.template(tpl)({
+                return joint.util.template(tpl)({
                     color: args.color || 'red',
                     width: _.isFinite(args.width) ? args.width : 1,
                     blur: _.isFinite(args.blur) ? args.blur : 0,
@@ -845,7 +918,7 @@ var joint = {
 
                 var x = _.isFinite(args.x) ? args.x : 2;
 
-                return _.template('<filter><feGaussianBlur stdDeviation="${stdDeviation}"/></filter>')({
+                return joint.util.template('<filter><feGaussianBlur stdDeviation="${stdDeviation}"/></filter>')({
                     stdDeviation: _.isFinite(args.y) ? [x, args.y] : x
                 });
             },
@@ -861,7 +934,7 @@ var joint = {
                     ? '<filter><feDropShadow stdDeviation="${blur}" dx="${dx}" dy="${dy}" flood-color="${color}" flood-opacity="${opacity}"/></filter>'
                     : '<filter><feGaussianBlur in="SourceAlpha" stdDeviation="${blur}"/><feOffset dx="${dx}" dy="${dy}" result="offsetblur"/><feFlood flood-color="${color}"/><feComposite in2="offsetblur" operator="in"/><feComponentTransfer><feFuncA type="linear" slope="${opacity}"/></feComponentTransfer><feMerge><feMergeNode/><feMergeNode in="SourceGraphic"/></feMerge></filter>';
 
-                return _.template(tpl)({
+                return joint.util.template(tpl)({
                     dx: args.dx || 0,
                     dy: args.dy || 0,
                     opacity: _.isFinite(args.opacity) ? args.opacity : 1,
@@ -875,7 +948,7 @@ var joint = {
 
                 var amount = _.isFinite(args.amount) ? args.amount : 1;
 
-                return _.template('<filter><feColorMatrix type="matrix" values="${a} ${b} ${c} 0 0 ${d} ${e} ${f} 0 0 ${g} ${b} ${h} 0 0 0 0 0 1 0"/></filter>')({
+                return joint.util.template('<filter><feColorMatrix type="matrix" values="${a} ${b} ${c} 0 0 ${d} ${e} ${f} 0 0 ${g} ${b} ${h} 0 0 0 0 0 1 0"/></filter>')({
                     a: 0.2126 + 0.7874 * (1 - amount),
                     b: 0.7152 - 0.7152 * (1 - amount),
                     c: 0.0722 - 0.0722 * (1 - amount),
@@ -892,7 +965,7 @@ var joint = {
 
                 var amount = _.isFinite(args.amount) ? args.amount : 1;
 
-                return _.template('<filter><feColorMatrix type="matrix" values="${a} ${b} ${c} 0 0 ${d} ${e} ${f} 0 0 ${g} ${h} ${i} 0 0 0 0 0 1 0"/></filter>')({
+                return joint.util.template('<filter><feColorMatrix type="matrix" values="${a} ${b} ${c} 0 0 ${d} ${e} ${f} 0 0 ${g} ${h} ${i} 0 0 0 0 0 1 0"/></filter>')({
                     a: 0.393 + 0.607 * (1 - amount),
                     b: 0.769 - 0.769 * (1 - amount),
                     c: 0.189 - 0.189 * (1 - amount),
@@ -910,7 +983,7 @@ var joint = {
 
                 var amount = _.isFinite(args.amount) ? args.amount : 1;
 
-                return _.template('<filter><feColorMatrix type="saturate" values="${amount}"/></filter>')({
+                return joint.util.template('<filter><feColorMatrix type="saturate" values="${amount}"/></filter>')({
                     amount: 1 - amount
                 });
             },
@@ -918,7 +991,7 @@ var joint = {
             // `angle` ...  the number of degrees around the color circle the input samples will be adjusted.
             hueRotate: function(args) {
 
-                return _.template('<filter><feColorMatrix type="hueRotate" values="${angle}"/></filter>')({
+                return joint.util.template('<filter><feColorMatrix type="hueRotate" values="${angle}"/></filter>')({
                     angle: args.angle || 0
                 });
             },
@@ -928,7 +1001,7 @@ var joint = {
 
                 var amount = _.isFinite(args.amount) ? args.amount : 1;
 
-                return _.template('<filter><feComponentTransfer><feFuncR type="table" tableValues="${amount} ${amount2}"/><feFuncG type="table" tableValues="${amount} ${amount2}"/><feFuncB type="table" tableValues="${amount} ${amount2}"/></feComponentTransfer></filter>')({
+                return joint.util.template('<filter><feComponentTransfer><feFuncR type="table" tableValues="${amount} ${amount2}"/><feFuncG type="table" tableValues="${amount} ${amount2}"/><feFuncB type="table" tableValues="${amount} ${amount2}"/></feComponentTransfer></filter>')({
                     amount: amount,
                     amount2: 1 - amount
                 });
@@ -937,7 +1010,7 @@ var joint = {
             // `amount` ... proportion of the conversion. A value of 0 will create an image that is completely black. A value of 1 leaves the input unchanged.
             brightness: function(args) {
 
-                return _.template('<filter><feComponentTransfer><feFuncR type="linear" slope="${amount}"/><feFuncG type="linear" slope="${amount}"/><feFuncB type="linear" slope="${amount}"/></feComponentTransfer></filter>')({
+                return joint.util.template('<filter><feComponentTransfer><feFuncR type="linear" slope="${amount}"/><feFuncG type="linear" slope="${amount}"/><feFuncB type="linear" slope="${amount}"/></feComponentTransfer></filter>')({
                     amount: _.isFinite(args.amount) ? args.amount : 1
                 });
             },
@@ -947,7 +1020,7 @@ var joint = {
 
                 var amount = _.isFinite(args.amount) ? args.amount : 1;
 
-                return _.template('<filter><feComponentTransfer><feFuncR type="linear" slope="${amount}" intercept="${amount2}"/><feFuncG type="linear" slope="${amount}" intercept="${amount2}"/><feFuncB type="linear" slope="${amount}" intercept="${amount2}"/></feComponentTransfer></filter>')({
+                return joint.util.template('<filter><feComponentTransfer><feFuncR type="linear" slope="${amount}" intercept="${amount2}"/><feFuncG type="linear" slope="${amount}" intercept="${amount2}"/><feFuncB type="linear" slope="${amount}" intercept="${amount2}"/></feComponentTransfer></filter>')({
                     amount: amount,
                     amount2: .5 - amount / 2
                 });
@@ -1171,6 +1244,64 @@ var joint = {
                     i = Math.max(-24, Math.min(24, Math.floor((i <= 0 ? i + 1 : i - 1) / 3) * 3));
                 }
                 return prefixes[8 + i / 3];
+            }
+        },
+
+        /*
+            Pre-compile the HTML to be used as a template.
+        */
+        template: function(html) {
+
+            /*
+                Must support the variation in templating syntax found here:
+                https://lodash.com/docs#template
+            */
+            var regex = /<%= ([^ ]+) %>|\$\{ ?([^\{\} ]+) ?\}|\{\{([^\{\} ]+)\}\}/g;
+
+            return function(data) {
+
+                return html.replace(regex, function(match) {
+
+                    var args = Array.prototype.slice.call(arguments);
+                    var attr = _.find(args.slice(1, 4), function(_attr) {
+                        return !!_attr;
+                    });
+
+                    var attrArray = attr.split('.');
+                    var value = data[attrArray.shift()];
+
+                    while (!_.isUndefined(value) && attrArray.length) {
+                        value = value[attrArray.shift()];
+                    }
+
+                    return !_.isUndefined(value) ? value : '';
+                });
+            };
+        },
+
+        /**
+         * @param {Element=} el Element, which content is intent to display in full-screen mode, 'document.body' is default.
+         */
+        toggleFullScreen: function(el) {
+
+            el = el || document.body;
+
+            function prefixedResult(el, prop) {
+
+                var prefixes = ['webkit', 'moz', 'ms', 'o', ''];
+                for (var i = 0; i < prefixes.length; i++) {
+                    var prefix = prefixes[i];
+                    var propName = prefix ? (prefix + prop) : (prop.substr(0, 1).toLowerCase() + prop.substr(1));
+                    if (!_.isUndefined(el[propName])) {
+                        return _.isFunction(el[propName]) ? el[propName]() : el[propName];
+                    }
+                }
+            }
+
+            if (prefixedResult(document, 'FullScreen') || prefixedResult(document, 'IsFullScreen')) {
+                prefixedResult(document, 'CancelFullScreen');
+            } else {
+                prefixedResult(el, 'RequestFullScreen');
             }
         }
     }

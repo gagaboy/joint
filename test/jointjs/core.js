@@ -1,23 +1,13 @@
-module('core', {
-
-    setup: function() {
-
-    },
-
-    teardown: function() {
-
-    }
-
-});
+module('core');
 
 test('core.util.interpolate', function() {
 
     var values = [0, .25, .5, .75, 1];
 
-    var numberInterpolation = joint.util.interpolate.number(0,100);
-    var objectInterpolation = joint.util.interpolate.object({ x: 100, y: 200 },{ x: 200, y: 0 });
-    var hexColorInterpolation = joint.util.interpolate.hexColor('#FFFFFF','#00FF77');
-    var unitInterpolation = joint.util.interpolate.unit('1em','0.50em');
+    var numberInterpolation = joint.util.interpolate.number(0, 100);
+    var objectInterpolation = joint.util.interpolate.object({ x: 100, y: 200 }, { x: 200, y: 0 });
+    var hexColorInterpolation = joint.util.interpolate.hexColor('#FFFFFF', '#00FF77');
+    var unitInterpolation = joint.util.interpolate.unit('1em', '0.50em');
 
     var numberArray = _.map(values, numberInterpolation);
     var objectArray = _.map(values, objectInterpolation);
@@ -25,22 +15,21 @@ test('core.util.interpolate', function() {
     var unitArray = _.map(values, unitInterpolation);
 
     deepEqual(numberArray, [
-	0, 25, 50, 75, 100
+        0, 25, 50, 75, 100
     ], 'Numbers interpolated.');
 
     deepEqual(objectArray, [
-	{ x: 100, y: 200 }, { x: 125, y: 150 }, { x: 150, y: 100 }, { x: 175, y: 50 }, { x: 200,    y: 0 }
+        { x: 100, y: 200 }, { x: 125, y: 150 }, { x: 150, y: 100 }, { x: 175, y: 50 }, { x: 200,    y: 0 }
     ], 'Objects interpolated.');
 
     deepEqual(hexColorArray, [
-	"#ffffff", "#bfffdd", "#7fffbb", "#3fff99", "#00ff77"
+        '#ffffff', '#bfffdd', '#7fffbb', '#3fff99', '#00ff77'
     ], 'String hex colors interpolated.');
 
     deepEqual(unitArray, [
-	"1.00em", "0.88em", "0.75em", "0.63em", "0.50em"
+        '1.00em', '0.88em', '0.75em', '0.63em', '0.50em'
     ], 'Numbers with units interpolated.');
-
-})
+});
 
 test('core.util.format.number', function() {
 
@@ -65,42 +54,41 @@ test('core.util.format.number', function() {
 
         equal(joint.util.format.number(input[0], input[1]), output, 'number(' + input[0] + ', ' + input[1] + ') = ' + output);
     });
-})
+});
 
 test('core.util.breakText', function() {
 
     // tests can't compare exact results as they may vary in different browsers
 
-    var text = "Lorem ipsum dolor sit amet, consectetur adipiscing elit.";
+    // This ensures that the tests will be more deterministic.
+    // For example, some browsers might have a different default font size/family.
+    var styles = {
+        'font-size': '12px',
+        'font-family': 'Courer New'
+    };
 
-    equal(joint.util.breakText("", { width: 100 }),
-          "",
-          "An empty text was correctly broken.");
+    var text = 'Lorem ipsum dolor sit amet, consectetur adipiscing elit.';
 
-    equal(joint.util.breakText(text, { width: 0, height: 0 }),
-          "",
-          "A text was correctly broken when zero width and height provided.");
+    equal(joint.util.breakText('', { width: 100 }, styles), '', 'An empty text was correctly broken.');
 
-    ok(_.contains(joint.util.breakText(text, { width: 100 }), '\n'),
-       "A text was broken when width A specified.");
+    equal(joint.util.breakText(text, { width: 0, height: 0 }, styles), '', 'A text was correctly broken when zero width and height provided.');
 
-    ok(_.contains(joint.util.breakText(text, { width: 15 }), '\n'),
-          "A text was broken when width B specified.");
+    ok(_.contains(joint.util.breakText(text, { width: 100 }, styles), '\n'),
+       'A text was broken when width A specified.');
 
-    var brokenText = joint.util.breakText(text, { width: 100, height: 50 });
+    ok(_.contains(joint.util.breakText(text, { width: 15 }, styles), '\n'), 'A text was broken when width B specified.');
 
-    ok(_.contains(brokenText, 'Lorem') && !_.contains(brokenText, 'elit.'),
-       "A text was trimmed when width & height specified.");
+    var brokenText = joint.util.breakText(text, { width: 100, height: 50 }, styles);
 
-    brokenText = joint.util.breakText(text, { width: 100, height: 50 }, { 'font-size': '18px' })
+    ok(_.contains(brokenText, 'Lorem') && !_.contains(brokenText, 'elit.'), 'A text was trimmed when width & height specified.');
 
-    ok(_.contains(brokenText, '\n') || !_.contains(brokenText, 'elit.'),
-       "A text was broken when style specified.");
+    brokenText = joint.util.breakText(text, { width: 100, height: 50 }, _.extend({}, styles, { 'font-size': '18px' }));
+
+    ok(_.contains(brokenText, '\n') || !_.contains(brokenText, 'elit.'), 'A text was broken when style specified.');
 
     throws(function() {
-        joint.util.breakText(text, { width: 100, height: 50 }, { 'font-size': 18 }, { svgDocument: 'not-svg' });
-    }, /appendChild|undefined/, "A custom svgDocument provided was recognized.");
-
+        joint.util.breakText(text, { width: 100, height: 50 }, _.extend({}, styles, { 'font-size': '18px' }), { svgDocument: 'not-svg' });
+    }, /appendChild|undefined/, 'A custom svgDocument provided was recognized.');
 });
 
 test('core.util.getByPath()', function() {
@@ -132,7 +120,6 @@ test('core.util.getByPath()', function() {
     deepEqual(joint.util.getByPath(obj, 'h/1/none'), undefined, 'non-existing property of nth item of an array is undefined');
     equal(joint.util.getByPath(obj, 'h/2/i/j'), 6, 'nested property of nth item of an array is number');
     equal(joint.util.getByPath(obj, 'h.2.i.j', '.'), 6, 'same but this time with a custom delimiter');
-
 });
 
 test('core.util.setByPath()', function() {
@@ -140,9 +127,9 @@ test('core.util.setByPath()', function() {
     deepEqual(joint.util.setByPath({}, 'property', 1), { property: 1 }, 'non-existing property in an obj set as a number');
     deepEqual(joint.util.setByPath({ property: 2 }, 'property', 3), { property: 3 }, 'existing property in an obj set as a number');
     deepEqual(joint.util.setByPath([], '0', 4), [4], 'add an item to an empty array');
-    deepEqual(joint.util.setByPath([5,6], '1', 7), [5,7], 'change an item in an array');
-    deepEqual(joint.util.setByPath({}, 'first/second/third', 8), { first: { second: { third: 8 }}}, 'populate an empty object with nested objects');
-    deepEqual(joint.util.setByPath({}, 'first.second.third', 9, '.'), { first: { second: { third: 9 }}}, 'same but this time with a custom delimiter');
+    deepEqual(joint.util.setByPath([5, 6], '1', 7), [5, 7], 'change an item in an array');
+    deepEqual(joint.util.setByPath({}, 'first/second/third', 8), { first: { second: { third: 8 } } }, 'populate an empty object with nested objects');
+    deepEqual(joint.util.setByPath({}, 'first.second.third', 9, '.'), { first: { second: { third: 9 } } }, 'same but this time with a custom delimiter');
     deepEqual(joint.util.setByPath([null], '0/property', 10), [{ property: 10 }], 'replace null item with an object');
 });
 
@@ -158,16 +145,15 @@ test('core.util.unsetByPath()', function() {
 
     joint.util.unsetByPath(obj, 'b/c', '/');
 
-    deepEqual(obj, { a: 1, b: { d: 3 }}, "A nested attribute was removed.");
+    deepEqual(obj, { a: 1, b: { d: 3 } }, 'A nested attribute was removed.');
 
     joint.util.unsetByPath(obj, 'b');
 
-    deepEqual(obj, { a: 1 }, "A primitive attribute was removed.");
+    deepEqual(obj, { a: 1 }, 'A primitive attribute was removed.');
 
     joint.util.unsetByPath(obj, 'c/d');
 
-    deepEqual(obj, { a: 1 }, "Attempt to delete non-existing attribute doesn't affect object.");
-
+    deepEqual(obj, { a: 1 }, 'Attempt to delete non-existing attribute doesn\'t affect object.');
 });
 
 test('core.util.normalizeSides()', function(assert) {
@@ -180,5 +166,118 @@ test('core.util.normalizeSides()', function(assert) {
 
     assert.deepEqual(joint.util.normalizeSides({ left: 5 }), { top: 0, left: 5, right: 0, bottom: 0 },
                      'If called with an object, the existing sides are copied from the given object and the rest is defaulted to 0.');
+});
 
+test('joint.setTheme()', function(assert) {
+
+    assert.ok(typeof joint.setTheme === 'function', 'should be a function');
+
+    var theme = 'set-global-theme-test';
+    var view1 = new joint.mvc.View();
+    var view2 = new joint.mvc.View();
+
+    joint.setTheme(theme);
+
+    assert.ok(view1.theme === theme && view2.theme === theme, 'should set the theme for all views');
+    assert.equal(joint.mvc.View.prototype.options.theme, theme, 'should update the default theme on the view prototype');
+
+    var view3 = new joint.mvc.View();
+
+    assert.equal(view3.theme, theme, 'newly created views should use the updated theme');
+
+    var localTheme = 'local-theme';
+
+    var SomeView = joint.mvc.View.extend({
+        options: {
+            theme: localTheme
+        }
+    });
+
+    var view4 = new joint.mvc.View({
+        theme: localTheme
+    });
+
+    joint.setTheme(theme);
+
+    assert.ok(view4.theme === localTheme, 'by default, should not override local theme settings');
+
+    joint.setTheme(theme, { override: true });
+
+    assert.ok(view4.theme === theme, 'when "override" set to true, should override local theme settings');
+});
+
+test('core.util.template(html)', function(assert) {
+
+    assert.equal(typeof joint.util.template, 'function', 'should be a function');
+
+    var samples = [
+        {
+            html: '<p>No embedded data in this template.</p>',
+            data: {},
+            expectedOutput: '<p>No embedded data in this template.</p>'
+        },
+        {
+            html: [
+                '<p>Some simple text with a value: <%= someValue %></p>',
+                '<p>Another line with another value: <%= anotherValue %></p>'
+            ].join(''),
+            data: {
+                someValue: 12345,
+                anotherValue: 678
+            },
+            expectedOutput: [
+                '<p>Some simple text with a value: 12345</p>',
+                '<p>Another line with another value: 678</p>'
+            ].join('')
+        },
+        {
+            html: '<p>With a complex data attribute <%= some.value %></p>',
+            data: {
+                some: {
+                    value: 123
+                }
+            },
+            expectedOutput: '<p>With a complex data attribute 123</p>'
+        },
+        {
+            html: '<p>With a more <%= some.value.text %> data attribute</p>',
+            data: {
+                some: {
+                    value: {
+                        text: 'complex'
+                    }
+                }
+            },
+            expectedOutput: '<p>With a more complex data attribute</p>'
+        },
+        {
+            html: '<p>Alternative syntax #${num}</p>',
+            data: {
+                num: 1
+            },
+            expectedOutput: '<p>Alternative syntax #1</p>'
+        },
+        {
+            html: '<p>Alternative syntax #${ num }</p>',
+            data: {
+                num: 2
+            },
+            expectedOutput: '<p>Alternative syntax #2</p>'
+        },
+        {
+            html: '<p>Alternative syntax #{{num}}</p>',
+            data: {
+                num: 3
+            },
+            expectedOutput: '<p>Alternative syntax #3</p>'
+        }
+    ];
+
+    _.each(samples, function(sample) {
+
+        var template = joint.util.template(sample.html);
+        var actualOutput = template(sample.data);
+
+        assert.equal(actualOutput, sample.expectedOutput, 'should return expected output');
+    });
 });

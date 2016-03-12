@@ -1,10 +1,12 @@
 require.config({
     baseUrl: '../../',
     paths: {
+        'qunit': 'lib/qunit/qunit/qunit',
+
         // Dependencies for Joint:
-        'jquery': 'lib/jquery/jquery',
-        'backbone': 'lib/backbone/backbone',
-        'lodash': 'lib/lodash/lodash'
+        'jquery': 'node_modules/jquery/dist/jquery',
+        'backbone': 'node_modules/backbone/backbone',
+        'lodash': 'node_modules/lodash/index'
     },
     map: {
         '*': {
@@ -14,18 +16,19 @@ require.config({
     }
 });
 
-module('RequireJS');
+require(['qunit'], function(QUnit) {
 
-(function() {
+    QUnit.start();
+    QUnit.module('RequireJS');
 
     var buildFiles = [
-        'dist/joint.core',
-        'dist/joint.core.min',
-        'dist/joint',
-        'dist/joint.min'
+        'build/joint.core',
+        'build/joint.core.min',
+        'build/joint',
+        'build/joint.min'
     ];
 
-    test('require joint build files', function(assert) {
+    QUnit.test('require joint build files', function(assert) {
 
         var done = assert.async();
 
@@ -53,5 +56,4 @@ module('RequireJS');
             done();
         });
     });
-
-})();
+});

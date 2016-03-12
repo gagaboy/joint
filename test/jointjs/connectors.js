@@ -17,18 +17,18 @@ module('connectors', {
 
     teardown: function() {
 
-        delete this.graph;
-        delete this.paper;
+        this.paper.remove();
+        this.graph = null;
+        this.paper = null;
     }
 });
 
 test('construction', function() {
 
-    var r1 = new joint.shapes.basic.Rect({ position: { x: 20, y: 30 }, size: { width: 120, height: 80 }});
+    var r1 = new joint.shapes.basic.Rect({ position: { x: 20, y: 30 }, size: { width: 120, height: 80 } });
     var r2 = r1.clone().translate(300);
 
-
-    this.graph.addCell([r1,r2]);
+    this.graph.addCell([r1, r2]);
 
     var l0 = new joint.dia.Link({
         source: { id: r1.id },
@@ -67,6 +67,7 @@ test('construction', function() {
     var customCalled = 0;
     var l3 = l0.clone().set('connector', function() {
         customCalled += 1;
+        return 'M 0 0';
     });
 
     this.graph.addCell(l3);

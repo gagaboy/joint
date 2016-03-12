@@ -119,6 +119,9 @@ joint.layout.DirectedGraph = {
         // executes the layout
         dagre.layout(glGraph, { debugTiming: !!opt.debugTiming });
 
+        // wrap all graph changes into a batch
+        graph.startBatch('layout');
+
         // Update the graph
         graph.fromGraphLib(glGraph, {
             importNode: function(v, gl) {
@@ -139,12 +142,16 @@ joint.layout.DirectedGraph = {
 
                 var link = this.getCell(edgeObj.name);
                 var glEdge = gl.edge(edgeObj);
+                var points = glEdge.points || [];
 
                 if (opt.setLinkVertices) {
                     if (opt.setVertices) {
-                        opt.setVertices(link, glEdge.points);
+                        opt.setVertices(link, points);
                     } else {
-                        link.set('vertices', glEdge.points);
+                        // Remove the first and last point from points array.
+                        // Those are source/target element connection points
+                        // ie. they lies on the edge of connected elements.
+                        link.set('vertices', points.slice(1, points.length - 1));
                     }
                 }
             }
@@ -164,6 +171,8 @@ joint.layout.DirectedGraph = {
                 .invoke('fitEmbeds', { padding: opt.clusterPadding })
                 .value();
         }
+
+        graph.stopBatch('layout');
 
         // Return an object with height and width of the graph.
         return glGraph.graph();

@@ -1,5 +1,5 @@
 //      Geometry library.
-//      (c) 2011-2013 client IO
+//      (c) 2011-2015 client IO
 
 var g = (function() {
 
@@ -156,6 +156,13 @@ var g = (function() {
             var theta = toRad(point(ref).theta(this));
             return this.offset(cos(theta) * distance, -sin(theta) * distance);
         },
+        // Scale point with origin at point `o`.
+        scale: function(sx, sy, o) {
+            o = (o && point(o)) || point(0, 0);
+            this.x = o.x + sx * (this.x - o.x);
+            this.y = o.y + sy * (this.y - o.y);
+            return this;
+        },
         // Returns change in angle from my previous position (-dx, -dy) to my new position
         // relative to ref point.
         changeInAngle: function(dx, dy, ref) {
@@ -177,6 +184,9 @@ var g = (function() {
         },
         clone: function() {
             return point(this);
+        },
+        toJSON: function() {
+            return { x: this.x, y: this.y };
         }
     };
     // Alternative constructor, from polar coordinates.
@@ -367,6 +377,21 @@ var g = (function() {
             return rect(x, y, Math.min(myCorner.x, rCorner.x) - x, Math.min(myCorner.y, rCorner.y) - y);
         },
 
+        // @return {rect} representing the union of both rectangles.
+        union: function(r) {
+            var myOrigin = this.origin();
+            var myCorner = this.corner();
+            var rOrigin = r.origin();
+            var rCorner = r.corner();
+
+            var originX = Math.min(myOrigin.x, rOrigin.x);
+            var originY = Math.min(myOrigin.y, rOrigin.y);
+            var cornerX = Math.max(myCorner.x, rCorner.x);
+            var cornerY = Math.max(myCorner.y, rCorner.y);
+
+            return rect(originX, originY, cornerX - originX, cornerY - originY);
+        },
+
         // @return {string} (left|right|top|bottom) side which is nearest to point
         // @see Squeak Smalltalk, Rectangle>>sideNearestTo:
         sideNearestToPoint: function(p) {
@@ -401,49 +426,35 @@ var g = (function() {
             }
             return false;
         },
-        // Algorithm ported from java.awt.Rectangle from OpenJDK.
+
         // @return {bool} true if rectangle `r` is inside me.
         containsRect: function(r) {
-            var nr = rect(r).normalize();
-            var W = nr.width;
-            var H = nr.height;
-            var X = nr.x;
-            var Y = nr.y;
-            var w = this.width;
-            var h = this.height;
-            if ((w | h | W | H) < 0) {
-                // At least one of the dimensions is negative...
+
+            var r0 = rect(this).normalize();
+            var r1 = rect(r).normalize();
+            var w0 = r0.width;
+            var h0 = r0.height;
+            var w1 = r1.width;
+            var h1 = r1.height;
+
+            if (!w0 || !h0 || !w1 || !h1) {
+                // At least one of the dimensions is 0
                 return false;
             }
-            // Note: if any dimension is zero, tests below must return false...
-            var x = this.x;
-            var y = this.y;
-            if (X < x || Y < y) {
-                return false;
-            }
-            w += x;
-            W += X;
-            if (W <= X) {
-                // X+W overflowed or W was zero, return false if...
-                // either original w or W was zero or
-                // x+w did not overflow or
-                // the overflowed x+w is smaller than the overflowed X+W
-                if (w >= x || W > w) return false;
-            } else {
-                // X+W did not overflow and W was not zero, return false if...
-                // original w was zero or
-                // x+w did not overflow and x+w is smaller than X+W
-                if (w >= x && W > w) return false;
-            }
-            h += y;
-            H += Y;
-            if (H <= Y) {
-                if (h >= y || H > h) return false;
-            } else {
-                if (h >= y && H > h) return false;
-            }
-            return true;
+
+            var x0 = r0.x;
+            var y0 = r0.y;
+            var x1 = r1.x;
+            var y1 = r1.y;
+
+            w1 += x1;
+            w0 += x0;
+            h1 += y1;
+            h0 += y0;
+
+            return x0 <= x1 && w1 <= w0 && y0 <= y1 && h1 <= h0;
         },
+
         // @return {point} a point on my boundary nearest to p
         // @see Squeak Smalltalk, Rectangle>>pointNearestTo:
         pointNearestToPoint: function(p) {
@@ -536,6 +547,15 @@ var g = (function() {
             var h = this.width * st + this.height * ct;
             return rect(this.x + (this.width - w) / 2, this.y + (this.height - h) / 2, w, h);
         },
+        // Scale rectangle with origin at point `o`
+        scale: function(sx, sy, o) {
+            var origin = this.origin().scale(sx, sy, o);
+            this.x = origin.x;
+            this.y = origin.y;
+            this.width *= sx;
+            this.height *= sy;
+            return this;
+        },
         snapToGrid: function(gx, gy) {
             var origin = this.origin().snapToGrid(gx, gy);
             var corner = this.corner().snapToGrid(gx, gy);
@@ -547,6 +567,9 @@ var g = (function() {
         },
         clone: function() {
             return rect(this);
+        },
+        toJSON: function() {
+            return { x: this.x, y: this.y, width: this.width, height: this.height };
         }
     };
 
