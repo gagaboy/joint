@@ -95,7 +95,6 @@ joint.dia.Graph = Backbone.Model.extend({
         cells.on('reset', this._restructureOnReset, this);
         cells.on('change:source', this._restructureOnChangeSource, this);
         cells.on('change:target', this._restructureOnChangeTarget, this);
-
         cells.on('remove', this._removeCell, this);
     },
 
@@ -130,6 +129,7 @@ joint.dia.Graph = Backbone.Model.extend({
             this._nodes[cell.id] = true;
         }
     },
+
     _restructureOnRemove: function(cell) {
 
         if (cell.isLink()) {
@@ -146,6 +146,7 @@ joint.dia.Graph = Backbone.Model.extend({
             delete this._nodes[cell.id];
         }
     },
+
     _restructureOnReset: function(cells) {
 
         // Normalize into an array of cells. The original `cells` is GraphCells Backbone collection.
@@ -158,6 +159,7 @@ joint.dia.Graph = Backbone.Model.extend({
 
         _.each(cells, this._restructureOnAdd, this);
     },
+
     _restructureOnChangeSource: function(link) {
 
         var prevSource = link.previous('source');
@@ -169,6 +171,7 @@ joint.dia.Graph = Backbone.Model.extend({
             (this._out[source.id] || (this._out[source.id] = {}))[link.id] = true;
         }
     },
+
     _restructureOnChangeTarget: function(link) {
 
         var prevTarget = link.previous('target');
@@ -315,16 +318,16 @@ joint.dia.Graph = Backbone.Model.extend({
         return this;
     },
 
-    addCells: function(cells, options) {
+    addCells: function(cells, opt) {
 
         if (cells.length) {
-            options = options || {};
-            options.position = cells.length;
+
+            opt.position = cells.length;
 
             this.startBatch('add');
             _.each(cells, function(cell) {
-                options.position--;
-                this.addCell(cell, options);
+                opt.position--;
+                this.addCell(cell, opt);
             }, this);
             this.stopBatch('add');
         }
@@ -338,6 +341,18 @@ joint.dia.Graph = Backbone.Model.extend({
     resetCells: function(cells, opt) {
 
         this.get('cells').reset(_.map(cells, this._prepareCell, this), opt);
+
+        return this;
+    },
+
+    removeCells: function(cells, opt) {
+
+        if (cells.length) {
+
+            this.startBatch('remove');
+            _.invoke(cells, 'remove');
+            this.stopBatch('remove');
+        }
 
         return this;
     },
@@ -569,23 +584,14 @@ joint.dia.Graph = Backbone.Model.extend({
     // the source and target of the link `L2` is changed to point to `A2` and `B2`.
     cloneCells: function(cells) {
 
+        cells = _.unique(cells);
+
         // A map of the form [original cell ID] -> [clone] helping
         // us to reconstruct references for source/target and parent/embeds.
         // This is also the returned value.
-        var cloneMap = {};
-        // A map [original cell ID] -> [Array of original embeds].
-        // This mapping caches the `embeds` array of original cells.
-        // This is needed because when using a shallow clone (without `deep` set to `true`),
-        // `embeds` are reset (see joint.dia.Cell >> clone()).
-        var embedsCache = {};
-
-        _.each(cells, function(cell) {
-            if (!cloneMap[cell.id]) {
-                var clone = cell.clone();
-                cloneMap[cell.id] = clone;
-                embedsCache[clone.id] = cell.get('embeds');
-            }
-        });
+        var cloneMap = _.transform(cells, function(map, cell) {
+            map[cell.id] = cell.clone();
+        }, {});
 
         _.each(cells, function(cell) {
 
@@ -607,21 +613,24 @@ joint.dia.Graph = Backbone.Model.extend({
                 }
             }
 
-            var parent = clone.get('parent');
+            // Find the parent of the original cell
+            var parent = cell.get('parent');
             if (parent && cloneMap[parent]) {
                 clone.set('parent', cloneMap[parent].id);
             }
 
-            if (embedsCache[clone.id]) {
-                var newEmbeds = [];
-                _.each(embedsCache[clone.id], function(embed) {
-                    if (cloneMap[embed]) {
-                        newEmbeds.push(cloneMap[embed].id);
-                    } else {
-                        newEmbeds.push(embed);
-                    }
-                });
-                clone.set('embeds', newEmbeds);
+            // Find the embeds of the original cell
+            var embeds = _.reduce(cell.get('embeds'), function(newEmbeds, embed) {
+                // Embedded cells that are not being cloned can not be carried
+                // over with other embedded cells.
+                if (cloneMap[embed]) {
+                    newEmbeds.push(cloneMap[embed].id);
+                }
+                return newEmbeds;
+            }, []);
+
+            if (!_.isEmpty(embeds)) {
+                clone.set('embeds', embeds);
             }
         });
 
@@ -1023,3 +1032,5 @@ joint.dia.Graph = Backbone.Model.extend({
         }
     }
 });
+
+joint.util.wrapWith(joint.dia.Graph.prototype, ['resetCells', 'addCells', 'removeCells'], 'cells');

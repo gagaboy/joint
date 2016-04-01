@@ -69,11 +69,16 @@ test('paper.resetViews()', function() {
     var r2 = new joint.shapes.basic.Rect;
     var r3 = new joint.shapes.basic.Rect;
 
+    var viewport = V(this.paper.viewport);
+
+    viewport.append(V('rect').addClass('not-a-cell'));
+
     this.graph.addCell(r1);
     this.graph.resetCells([r2, r3]);
 
     equal(this.graph.get('cells').length, 2, 'previous cells were removed from the graph after calling graph.resetCells()');
     equal(this.paper.$('.element').length, 2, 'previous cells were removed from the paper after calling graph.resetCells()');
+    equal(viewport.find('.not-a-cell').length, 1, 'should not remove non-cell DOM elements from viewport');
 });
 
 test('graph.fromJSON(), graph.toJSON()', function() {
@@ -719,35 +724,35 @@ test('drawGrid(opt)', function(assert) {
             message: 'scaled up',
             gridSize: 12,
             origin: {
-                x: 11,
-                y: 7
+                x: 0,
+                y: 0
             },
             scale: {
-                x: 2.3,
-                y: 2.3
+                x: 2,
+                y: 2
             },
             opt: {
                 color: '#aaa',
                 thickness: 1
             },
-            imageDataUri: 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAABsAAAAbCAYAAACN1PRVAAAARklEQVRIS2NkoCNgpKNdDKOWUSW0R4MRHIyrVq36HxYWRnZokK2RnEgctYycUMPQMxqMo8GINwRGE8hoAhlNIFRJAyM0GAEAYwQc5iT5JwAAAABJRU5ErkJggg=='
+            imageDataUri: 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAABgAAAAYCAYAAADgdz34AAAARUlEQVRIS2NctWrVfwYGBoawsDBGEE1twEhzC6jtYnTzaBIsyJaMWkAwCkeDaDSICIYAQQWjqWg0iAiGAEEFo6loBAQRAJa9CBnOM9wvAAAAAElFTkSuQmCC'
         },
         {
             message: 'scaled down',
-            gridSize: 15,
+            gridSize: 20,
             origin: {
-                x: 11,
-                y: 7
+                x: 0,
+                y: 0
             },
             scale: {
-                x: 0.7,
-                y: 0.7
+                x: 0.5,
+                y: 0.5
             },
             opt: {
                 color: '#aaa',
-                thickness: 1
+                thickness: 2
             },
-            imageDataUri: 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAoAAAAKCAYAAACNMs+9AAAAIklEQVQYV2NkIBIwEqmOYXgpXLlyZQPI5+Hh4WAaF6C+rwHgUAQLQv9VhAAAAABJRU5ErkJggg=='
+            imageDataUri: 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAoAAAAKCAYAAACNMs+9AAAAIElEQVQYV2NctWrV/7CwMEYGAoCgApj+UYV4Q5Lo4AEAZLcECwWKMoMAAAAASUVORK5CYII='
         }
     ];
 

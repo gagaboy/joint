@@ -370,7 +370,11 @@ joint.dia.Cell = Backbone.Model.extend({
             // We don't want the clone to have the same ID as the original.
             clone.set('id', joint.util.uuid());
             // A shallow cloned element does not carry over the original embeds.
-            clone.set('embeds', '');
+            clone.unset('embeds');
+            // And can not be embedded in any cell
+            // as the clone is not part of the graph.
+            clone.unset('parent');
+
             return clone;
 
         } else {
@@ -605,6 +609,11 @@ joint.dia.Cell = Backbone.Model.extend({
         return paper.findViewByModel(this);
     },
 
+    isElement: function() {
+
+        return false;
+    },
+
     isLink: function() {
 
         return false;
@@ -704,17 +713,17 @@ joint.dia.CellView = joint.mvc.View.extend({
         return $selected;
     },
 
-    notify: function(evt) {
+    notify: function(eventName) {
 
         if (this.paper) {
 
             var args = Array.prototype.slice.call(arguments, 1);
 
             // Trigger the event on both the element itself and also on the paper.
-            this.trigger.apply(this, [evt].concat(args));
+            this.trigger.apply(this, [eventName].concat(args));
 
             // Paper event handlers receive the view object as the first argument.
-            this.paper.trigger.apply(this.paper, [evt, this].concat(args));
+            this.paper.trigger.apply(this.paper, [eventName, this].concat(args));
         }
     },
 
