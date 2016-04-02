@@ -3,10 +3,14 @@
 <head>
     <title>my  test</title>
     <meta charset="utf8"/>
-    <link rel="stylesheet" type="text/css" href="../dist/joint.css" />
-    <script src="../lib/jquery.js"></script>
-    <script src="../dist/joint.all.min.js"></script>
-<!--    <script src="../plugins/moqui/joint.shapes.moqui.js"></script>-->
+    <link rel="stylesheet" type="text/css" href="../build/joint.css" />
+    <!-- Dependencies: -->
+    <script src="../node_modules/jquery/dist/jquery.js"></script>
+    <script src="../node_modules/lodash/index.js"></script>
+    <script src="../node_modules/backbone/backbone.js"></script>
+
+    <script src="../build/joint.js"></script>
+
     <style>
         #paper {
             display: inline-block;
@@ -36,9 +40,9 @@
 <script language="JavaScript">
 
     //从服务端获取模型解析展现
-    //renderModelsFromServer("data/exampleItemDefinition.json") ;
+    renderModelsFromServer("data/exampleItemDefinition.json") ;
     //从服务端获取模型JSON配置进行展现
-    renderPageJSONFromServer("data/demoLayout.json");
+    //renderPageJSONFromServer("data/demoLayout.json");
 
     function print(){
         console.log(JSON.stringify(graph.toJSON()));
