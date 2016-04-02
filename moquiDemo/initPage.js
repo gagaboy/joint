@@ -203,7 +203,7 @@ function renderModelsFromServer(modelUrl){
             }
         }
 
-        for(var value of outEntitiesMap.values()){
+        for(var value of  outEntitiesMap.values()){
             entityIndex ++ ;
             var posInfo = autoLayout(entityIndex) ;
             var entityFullName = value ;
