@@ -42,6 +42,7 @@ module.exports = function(grunt) {
             'shapes.devs': ['plugins/shapes/joint.shapes.devs.js'],
             'shapes.uml': ['plugins/shapes/joint.shapes.uml.js'],
             'shapes.logic': ['plugins/shapes/joint.shapes.logic.js'],
+            'shapes.moqui': ['plugins/moqui/joint.shapes.moqui.js'],
 
             'layout.DirectedGraph': ['plugins/layout/DirectedGraph/joint.layout.DirectedGraph.js']
         }
