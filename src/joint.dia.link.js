@@ -240,7 +240,14 @@ joint.dia.Link = joint.dia.Cell.extend({
 
         return !!ancestor && (ancestor.id === elementId || ancestor.isEmbeddedIn(elementId));
     }
-});
+},
+    {
+        endsEqual: function(a, b) {
+
+            var portsEqual = a.port === b.port || !a.port && !b.port;
+            return a.id === b.id && portsEqual;
+        }
+    });
 
 
 // joint.dia.Link base view and controller.
@@ -249,7 +256,12 @@ joint.dia.Link = joint.dia.Cell.extend({
 joint.dia.LinkView = joint.dia.CellView.extend({
 
     className: function() {
-        return _.unique(this.model.get('type').split('.').concat('link')).join(' ');
+
+        var classNames = joint.dia.CellView.prototype.className.apply(this).split(' ');
+
+        classNames.push('link');
+
+        return classNames.join(' ');
     },
 
     options: {
@@ -365,7 +377,8 @@ joint.dia.LinkView = joint.dia.CellView.extend({
         // of elements with special meaning though. Therefore, those classes should be preserved in any
         // special markup passed in `properties.markup`.
         var model = this.model;
-        var children = V(model.get('markup') || model.markup);
+        var markup = model.get('markup') || model.markup;
+        var children = V(markup);
 
         // custom markup may contain only one children
         if (!_.isArray(children)) children = [children];
@@ -373,8 +386,15 @@ joint.dia.LinkView = joint.dia.CellView.extend({
         // Cache all children elements for quicker access.
         this._V = {}; // vectorized markup;
         _.each(children, function(child) {
-            var c = child.attr('class');
-            c && (this._V[$.camelCase(c)] = child);
+
+            var className = child.attr('class');
+
+            if (className) {
+                // Strip the joint class name prefix, if there is one.
+                className = joint.util.removeClassNamePrefix(className);
+                this._V[$.camelCase(className)] = child;
+            }
+
         }, this);
 
         // Only the connection path is mandatory
@@ -1424,12 +1444,14 @@ joint.dia.LinkView = joint.dia.CellView.extend({
     },
 
     startArrowheadMove: function(end, opt) {
+
         opt = _.defaults(opt || {}, { whenNotAllowed: 'revert' });
         // Allow to delegate events from an another view to this linkView in order to trigger arrowhead
         // move without need to click on the actual arrowhead dom element.
         this._action = 'arrowhead-move';
         this._whenNotAllowed = opt.whenNotAllowed;
         this._arrowhead = end;
+        this._initialMagnet = this[end + 'Magnet'] || (this[end + 'View'] ? this[end + 'View'].el : null);
         this._initialEnd = _.clone(this.model.get(end)) || { x: 0, y: 0 };
         this._validateConnectionArgs = this._createValidateConnectionArgs(this._arrowhead);
         this._beforeArrowheadMove();
@@ -1446,11 +1468,8 @@ joint.dia.LinkView = joint.dia.CellView.extend({
         // if are simulating pointerdown on a link during a magnet click, skip link interactions
         if (evt.target.getAttribute('magnet') != null) return;
 
-        var interactive = _.isFunction(this.options.interactive) ? this.options.interactive(this) : this.options.interactive;
-        if (interactive === false) return;
-
-        var className = evt.target.getAttribute('class');
-        var parentClassName = evt.target.parentNode.getAttribute('class');
+        var className = joint.util.removeClassNamePrefix(evt.target.getAttribute('class'));
+        var parentClassName = joint.util.removeClassNamePrefix(evt.target.parentNode.getAttribute('class'));
         var labelNode;
         if (parentClassName === 'label') {
             className = parentClassName;
@@ -1496,14 +1515,14 @@ joint.dia.LinkView = joint.dia.CellView.extend({
 
                 var targetParentEvent = evt.target.parentNode.getAttribute('event');
                 if (targetParentEvent) {
-
-                    // `remove` event is built-in. Other custom events are triggered on the paper.
-                    if (targetParentEvent === 'remove') {
-                        this.model.remove();
-                    } else {
-                        this.notify(targetParentEvent, evt, x, y);
+                    if (this.can('useLinkTools')) {
+                        // `remove` event is built-in. Other custom events are triggered on the paper.
+                        if (targetParentEvent === 'remove') {
+                            this.model.remove();
+                        } else {
+                            this.notify(targetParentEvent, evt, x, y);
+                        }
                     }
-
                 } else {
                     if (this.can('vertexAdd')) {
 
@@ -1715,8 +1734,11 @@ joint.dia.LinkView = joint.dia.CellView.extend({
 
         } else if (this._action === 'arrowhead-move') {
 
-            var paperOptions = this.paper.options;
+            var paper = this.paper;
+            var paperOptions = paper.options;
             var arrowhead = this._arrowhead;
+            var initialEnd = this._initialEnd;
+            var magnetUnderPointer;
 
             if (paperOptions.snapLinks) {
 
@@ -1727,13 +1749,16 @@ joint.dia.LinkView = joint.dia.CellView.extend({
                         connecting: true,
                         snapping: true
                     });
+
+                    magnetUnderPointer = this._closestView.findMagnet(this._closestEnd.selector);
                 }
+
                 this._closestView = this._closestEnd = null;
 
             } else {
 
                 var viewUnderPointer = this._viewUnderPointer;
-                var magnetUnderPointer = this._magnetUnderPointer;
+                magnetUnderPointer = this._magnetUnderPointer;
 
                 this._viewUnderPointer = null;
                 this._magnetUnderPointer = null;
@@ -1755,7 +1780,7 @@ joint.dia.LinkView = joint.dia.CellView.extend({
             }
 
             // If the changed link is not allowed, revert to its previous state.
-            if (!this.paper.linkAllowed(this)) {
+            if (!paper.linkAllowed(this)) {
 
                 switch (this._whenNotAllowed) {
 
@@ -1765,7 +1790,7 @@ joint.dia.LinkView = joint.dia.CellView.extend({
 
                     case 'revert':
                     default:
-                        this.model.set(arrowhead, this._initialEnd, { ui: true });
+                        this.model.set(arrowhead, initialEnd, { ui: true });
                         break;
                 }
             }
@@ -1776,11 +1801,27 @@ joint.dia.LinkView = joint.dia.CellView.extend({
                 this._z = null;
             }
 
+            var currentEnd = this.model.prop(arrowhead) || {};
+            var endChanged = !joint.dia.Link.endsEqual(initialEnd, currentEnd);
+
+            if (endChanged) {
+
+                if (initialEnd.id) {
+                    this.notify('link:disconnect', evt, paper.findViewByModel(initialEnd.id), this._initialMagnet, arrowhead);
+                }
+                if (currentEnd.id) {
+                    this.notify('link:connect', evt, paper.findViewByModel(currentEnd.id), magnetUnderPointer, arrowhead);
+                }
+            }
+
             this._afterArrowheadMove();
         }
 
         this._action = null;
         this._whenNotAllowed = null;
+        this._initialMagnet = null;
+        this._initialEnd = null;
+        this._validateConnectionArgs = null;
 
         this.notify('link:pointerup', evt, x, y);
         joint.dia.CellView.prototype.pointerup.apply(this, arguments);

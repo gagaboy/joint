@@ -1,7 +1,6 @@
 //      JointJS library.
 //      (c) 2011-2015 client IO
 
-
 joint.dia.Paper = joint.mvc.View.extend({
 
     className: 'paper',
@@ -177,7 +176,7 @@ joint.dia.Paper = joint.mvc.View.extend({
         this.options.highlighting = _.cloneDeep(this.options.highlighting);
 
         this.svg = V('svg').node;
-        this.viewport = V('g').addClass('viewport').node;
+        this.viewport = V('g').addClass(joint.util.addClassNamePrefix('viewport')).node;
         this.defs = V('defs').node;
 
         // Append `<defs>` element to the SVG document. This is useful for filters and gradients.
@@ -185,11 +184,11 @@ joint.dia.Paper = joint.mvc.View.extend({
 
         this.$el.append(this.svg);
 
-        this.model.on('add', this.onCellAdded, this);
-        this.model.on('remove', this.removeView, this);
-        this.model.on('reset', this.resetViews, this);
-        this.model.on('sort', this._onSort, this);
-        this.model.on('batch:stop', this._onBatchStop, this);
+        this.listenTo(this.model, 'add', this.onCellAdded);
+        this.listenTo(this.model, 'remove', this.removeView);
+        this.listenTo(this.model, 'reset', this.resetViews);
+        this.listenTo(this.model, 'sort', this._onSort);
+        this.listenTo(this.model, 'batch:stop', this._onBatchStop);
 
         this.setOrigin();
         this.setDimensions();
@@ -1066,10 +1065,10 @@ joint.dia.Paper = joint.mvc.View.extend({
 
     pointermove: function(evt) {
 
-        evt.preventDefault();
-        evt = joint.util.normalizeEvent(evt);
-
         if (this.sourceView) {
+
+            evt.preventDefault();
+            evt = joint.util.normalizeEvent(evt);
 
             // Mouse moved counter.
             this._mousemoved++;
@@ -1150,10 +1149,15 @@ joint.dia.Paper = joint.mvc.View.extend({
         return this;
     },
 
+    clearGrid: function() {
+
+        this.el.style.backgroundImage = 'none';
+        return this;
+    },
+
     drawGrid: function(opt) {
 
-        opt = opt || {};
-        _.defaults(opt, this.options.drawGrid, {
+        opt = _.defaults(opt || {}, this.options.drawGrid, {
             color: '#aaa',
             thickness: 1
         });
@@ -1161,8 +1165,7 @@ joint.dia.Paper = joint.mvc.View.extend({
         var gridSize = this.options.gridSize;
 
         if (gridSize <= 1) {
-            this.el.style.backgroundImage = 'none';
-            return;
+            return this.clearGrid();
         }
 
         var currentScale = V(this.viewport).scale();
@@ -1189,6 +1192,14 @@ joint.dia.Paper = joint.mvc.View.extend({
 
         var backgroundImage = canvas.toDataURL('image/png');
         this.el.style.backgroundImage = 'url("' + backgroundImage + '")';
-    }
 
+        return this;
+    },
+
+    setInteractivity: function(value) {
+
+        this.options.interactive = value;
+
+        _.invoke(this._views, 'setInteractivity', value);
+    }
 });

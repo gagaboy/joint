@@ -30,6 +30,7 @@ test('constructor', function(assert) {
     var view = new SomeView();
 
     _.each(className.split(' '), function(_className) {
+        _className = joint.util.addClassNamePrefix(_className);
         assert.ok(view.$el.hasClass(_className), 'has expected class name(s)');
     });
 
@@ -81,7 +82,7 @@ test('init()', function(assert) {
 test('setTheme(theme)', function(assert) {
 
     var theme = 'some-theme';
-    var defaultTheme = joint.mvc.View.prototype.options.theme;
+    var defaultTheme = joint.mvc.View.prototype.defaultTheme;
     var SomeView = joint.mvc.View.extend();
     var view = new SomeView();
 
@@ -89,6 +90,50 @@ test('setTheme(theme)', function(assert) {
 
     var themeClassName = SomeView.prototype.themeClassNamePrefix + theme;
 
+    assert.notEqual(defaultTheme, undefined, 'default theme is set');
     assert.equal(view.theme, theme, 'should correctly set the theme for the view');
     assert.ok(view.$el.hasClass(themeClassName) && !view.$el.hasClass(defaultTheme), 'view.$el should have correct theme class name');
+});
+
+test('render()', function(assert) {
+
+    assert.ok(typeof joint.mvc.View.prototype.render === 'function', 'should be a function');
+
+    var view = new joint.mvc.View();
+
+    assert.equal(view.render(), view, 'should return itself');
+});
+
+test('onRender()', function(assert) {
+
+    assert.ok(typeof joint.mvc.View.prototype.onRender === 'function', 'should be a function');
+
+    var called;
+
+    var SomeView = joint.mvc.View.extend({
+        onRender: function() {
+            called = true;
+        }
+    });
+
+    var view = new SomeView();
+
+    called = false;
+    view.render();
+    assert.ok(called, 'should be called when render() is called');
+});
+
+test('classNamePrefix', function(assert) {
+
+    var className = 'custom-class-name';
+
+    var SomeView = joint.mvc.View.extend({
+        className: className
+    });
+
+    var view = new SomeView();
+    var defaultTheme = joint.mvc.View.prototype.defaultTheme;
+    var themeClassName = SomeView.prototype.themeClassNamePrefix + defaultTheme;
+
+    assert.equal(view.$el.attr('class'), themeClassName + ' ' + joint.util.addClassNamePrefix(className));
 });

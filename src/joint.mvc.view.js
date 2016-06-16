@@ -3,13 +3,11 @@
 
 joint.mvc.View = Backbone.View.extend({
 
-    options: {
-        theme: 'default'
-    },
-
+    options: {},
     theme: null,
-    themeClassNamePrefix: 'joint-theme-',
+    themeClassNamePrefix: joint.util.addClassNamePrefix('theme-'),
     requireSetThemeOverride: false,
+    defaultTheme: joint.config.defaultTheme,
 
     constructor: function(options) {
 
@@ -20,13 +18,13 @@ joint.mvc.View = Backbone.View.extend({
 
         this.requireSetThemeOverride = options && !!options.theme;
 
-        this.options = _.extend({}, joint.mvc.View.prototype.options || {}, this.options || {}, options || {});
+        this.options = _.extend({}, this.options, options);
 
         _.bindAll(this, 'setTheme', 'onSetTheme', 'remove', 'onRemove');
 
         joint.mvc.views[this.cid] = this;
 
-        this.setTheme(this.options.theme);
+        this.setTheme(this.options.theme || this.defaultTheme);
         this._ensureElClassName();
         this.init();
     },
@@ -34,11 +32,18 @@ joint.mvc.View = Backbone.View.extend({
     _ensureElClassName: function() {
 
         var className = _.result(this, 'className');
+        var prefixedClassName = joint.util.addClassNamePrefix(className);
 
-        this.$el.addClass(className);
+        this.$el.removeClass(className);
+        this.$el.addClass(prefixedClassName);
     },
 
     init: function() {
+        // Intentionally empty.
+        // This method is meant to be overriden.
+    },
+
+    onRender: function() {
         // Intentionally empty.
         // This method is meant to be overriden.
     },
@@ -51,16 +56,32 @@ joint.mvc.View = Backbone.View.extend({
         // Don't set the theme.
         if (this.theme && this.requireSetThemeOverride && !opt.override) return;
 
+        this.removeThemeClassName();
+        this.addThemeClassName(theme);
         this.onSetTheme(this.theme/* oldTheme */, theme/* newTheme */);
-
-        if (this.theme) {
-
-            this.$el.removeClass(this.themeClassNamePrefix + this.theme);
-        }
-
-        this.$el.addClass(this.themeClassNamePrefix + theme);
-
         this.theme = theme;
+
+        return this;
+    },
+
+    addThemeClassName: function(theme) {
+
+        theme = theme || this.theme;
+
+        var className = this.themeClassNamePrefix + theme;
+
+        this.$el.addClass(className);
+
+        return this;
+    },
+
+    removeThemeClassName: function(theme) {
+
+        theme = theme || this.theme;
+
+        var className = this.themeClassNamePrefix + theme;
+
+        this.$el.removeClass(className);
 
         return this;
     },
@@ -86,3 +107,32 @@ joint.mvc.View = Backbone.View.extend({
         // This method is meant to be overriden.
     }
 });
+
+(function() {
+
+    joint.mvc.View._extend = joint.mvc.View.extend;
+
+    joint.mvc.View.extend = function(protoProps, staticProps) {
+
+        protoProps = protoProps || {};
+
+        var render = protoProps.render || this.prototype.render || null;
+
+        protoProps.render = function() {
+
+            if (render) {
+                // Call the original render method.
+                render.apply(this, arguments);
+            }
+
+            // Should always call onRender() method.
+            this.onRender();
+
+            // Should always return itself.
+            return this;
+        };
+
+        return joint.mvc.View._extend.call(this, protoProps, staticProps);
+    };
+
+})();

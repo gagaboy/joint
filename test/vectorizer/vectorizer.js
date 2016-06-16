@@ -16,6 +16,14 @@ QUnit.module('vectorizer', function(hooks) {
     var svgGroup2 = document.getElementById('svg-group-2');
     var svgGroup3 = document.getElementById('svg-group-3');
 
+    var childrenTagNames = function(vel) {
+        var tagNames = [];
+        Array.prototype.slice.call(vel.node.childNodes).forEach(function(childNode) {
+            tagNames.push(childNode.tagName.toLowerCase());
+        });
+        return tagNames;
+    };
+
     hooks.afterEach = function() {
 
         $fixture.empty();
@@ -416,4 +424,211 @@ QUnit.module('vectorizer', function(hooks) {
             assert.equal(vel.node.childNodes.length, 0);
         });
     });
+
+    QUnit.module('attribute', function(hooks) {
+
+        var svgToString = function(svg) {
+
+            return new XMLSerializer().serializeToString(svg.node);
+        };
+
+        hooks.beforeEach(function() {
+
+            this.svg = V('svg');
+        });
+
+        QUnit.module('set', function(hooks) {
+
+            QUnit.test('no namespace', function(assert) {
+
+                var element = V('a').attr('href', 'www.seznam.cz');
+                this.svg.append(element);
+
+                var text = svgToString(element);
+                assert.equal(text.indexOf(':href'), -1, 'should find attr without namespace');
+                assert.ok(text.indexOf('href') > 0, 'attr has been set');
+                assert.ok(text.indexOf('href') > 0, 'attr values has been set');
+            });
+
+            QUnit.test('with namespace', function(assert) {
+
+                var element = V('a').attr('xlink:href', 'www.seznam.cz');
+                this.svg.append(element);
+
+                var text = svgToString(this.svg);
+                assert.ok(text.indexOf('xlink:href') > 0, 'message');
+            });
+
+            QUnit.test('value "null" removes attr', function(assert) {
+
+                var element = V('a').attr('xlink:href', 'www.seznam.cz');
+                this.svg.append(element);
+
+                element.attr('xlink:href', null);
+
+                var text = svgToString(this.svg);
+
+                assert.ok(text.indexOf('xlink:href') === -1, 'attribute should be removed');
+            });
+
+            QUnit.test('special attr', function(assert) {
+
+                var element = V('a').attr('id', 'x');
+                this.svg.append(element);
+
+                var text = svgToString(element);
+                assert.ok(text.indexOf('id') > 0, 'id has been set');
+            });
+        });
+
+        QUnit.test('remove simple', function(assert) {
+
+            var a = V('a').attr('href', 'www.seznam.cz');
+            this.svg.append(a);
+            a.removeAttr('href');
+
+            var text = svgToString(this.svg);
+            assert.equal(text.indexOf('href'), -1, 'should be deleted');
+        });
+
+        QUnit.test('try to remove non existing', function(assert) {
+
+            var a = V('a').attr('href', 'www.seznam.cz');
+            this.svg.append(a);
+            a.removeAttr('blah');
+
+            var text = svgToString(this.svg);
+            assert.ok(text.indexOf('href') > 0, 'should not throw');
+        });
+
+        QUnit.test('remove with namespace', function(assert) {
+
+            var a = V('a').attr('xlink:href', 'www.seznam.cz');
+            this.svg.append(a);
+            a.removeAttr('xlink:href');
+
+            var text = svgToString(this.svg);
+            assert.equal(text.indexOf('href'), -1, 'message');
+            assert.equal(text.indexOf('seznam'), -1, 'message');
+        });
+
+        QUnit.test('remove with not known namespace', function(assert) {
+
+            var a = V('a').attr('xxx:href', 'www.seznam.cz');
+            this.svg.append(a);
+            a.removeAttr('xxx:href');
+
+            var text = svgToString(this.svg);
+            assert.equal(text.indexOf('href'), -1, 'message');
+            assert.equal(text.indexOf('seznam'), -1, 'message');
+        });
+
+        QUnit.test('apply remove attr', function(assert) {
+
+            var element = V('a');
+            this.svg.append(element);
+
+            element.text();
+            element.text('text');
+
+            var text = svgToString(this.svg);
+            assert.ok(text.indexOf('display="null"') === -1, 'attr display should be removed');
+        });
+    });
+
+    QUnit.module('append()', function(hooks) {
+
+        var groupElement;
+
+        hooks.beforeEach(function() {
+            groupElement = V(svgGroup).clone().empty();
+        });
+
+        QUnit.test('single element', function(assert) {
+
+            groupElement.append(V('<rect/>'));
+            assert.equal(groupElement.node.childNodes.length, 1);
+            assert.deepEqual(childrenTagNames(groupElement), ['rect']);
+
+            groupElement.append(V('<circle/>'));
+            assert.equal(groupElement.node.childNodes.length, 2);
+            assert.deepEqual(childrenTagNames(groupElement), ['rect', 'circle']);
+        });
+
+        QUnit.test('multiple elements', function(assert) {
+
+            groupElement.append(V('<rect/><circle/>'));
+            assert.equal(groupElement.node.childNodes.length, 2);
+            assert.deepEqual(childrenTagNames(groupElement), ['rect', 'circle']);
+
+            groupElement.append(V('<line/><polygon/>'));
+            assert.equal(groupElement.node.childNodes.length, 4);
+            assert.deepEqual(childrenTagNames(groupElement), ['rect', 'circle', 'line', 'polygon']);
+        });
+    });
+
+    QUnit.module('prepend()', function(hooks) {
+
+        var groupElement;
+
+        hooks.beforeEach(function() {
+            groupElement = V(svgGroup).clone().empty();
+        });
+
+        QUnit.test('single element', function(assert) {
+
+            groupElement.prepend(V('<rect/>'));
+            assert.equal(groupElement.node.childNodes.length, 1);
+            assert.deepEqual(childrenTagNames(groupElement), ['rect']);
+
+            groupElement.prepend(V('<circle/>'));
+            assert.equal(groupElement.node.childNodes.length, 2);
+            assert.deepEqual(childrenTagNames(groupElement), ['circle', 'rect']);
+        });
+
+        QUnit.test('multiple elements', function(assert) {
+
+            groupElement.prepend(V('<rect/><circle/>'));
+            assert.equal(groupElement.node.childNodes.length, 2);
+            assert.deepEqual(childrenTagNames(groupElement), ['rect', 'circle']);
+
+            groupElement.prepend(V('<line/><polygon/>'));
+            assert.equal(groupElement.node.childNodes.length, 4);
+            assert.deepEqual(childrenTagNames(groupElement), ['line', 'polygon', 'rect', 'circle']);
+        });
+    });
+
+    QUnit.module('before()', function(hooks) {
+
+        var groupElement, rectElement;
+
+        hooks.beforeEach(function() {
+            groupElement = V(svgGroup).clone().empty();
+            rectElement = V(svgRectangle).clone().empty();
+            groupElement.append(rectElement);
+        });
+
+        QUnit.test('single element', function(assert) {
+
+            rectElement.before(V('<circle/>'));
+            assert.equal(groupElement.node.childNodes.length, 2);
+            assert.deepEqual(childrenTagNames(groupElement), ['circle', 'rect']);
+
+            rectElement.before(V('<line/>'));
+            assert.equal(groupElement.node.childNodes.length, 3);
+            assert.deepEqual(childrenTagNames(groupElement), ['circle', 'line', 'rect']);
+        });
+
+        QUnit.test('multiple elements', function(assert) {
+
+            rectElement.before(V('<ellipse/><circle/>'));
+            assert.equal(groupElement.node.childNodes.length, 3);
+            assert.deepEqual(childrenTagNames(groupElement), ['ellipse', 'circle', 'rect']);
+
+            rectElement.before(V('<line/><polygon/>'));
+            assert.equal(groupElement.node.childNodes.length, 5);
+            assert.deepEqual(childrenTagNames(groupElement), ['ellipse', 'circle', 'line', 'polygon', 'rect']);
+        });
+    });
+
 });

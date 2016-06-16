@@ -350,7 +350,7 @@ joint.dia.Graph = Backbone.Model.extend({
         if (cells.length) {
 
             this.startBatch('remove');
-            _.invoke(cells, 'remove');
+            _.invoke(cells, 'remove', opt);
             this.stopBatch('remove');
         }
 
@@ -934,6 +934,7 @@ joint.dia.Graph = Backbone.Model.extend({
     // Find all elements in given area
     findModelsInArea: function(rect, opt) {
 
+        rect = g.rect(rect);
         opt = _.defaults(opt || {}, { strict: false });
 
         var method = opt.strict ? 'containsRect' : 'intersect';
@@ -962,6 +963,7 @@ joint.dia.Graph = Backbone.Model.extend({
 
     // Return bounding box of all elements.
     getBBox: function(cells, opt) {
+
         return this.getCellsBBox(cells || this.getElements(), opt);
     },
 

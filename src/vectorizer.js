@@ -31,6 +31,7 @@ V = Vectorizer = (function() {
     // XML namespaces.
     var ns = {
         xmlns: 'http://www.w3.org/2000/svg',
+        xml: 'http://www.w3.org/XML/1998/namespace',
         xlink: 'http://www.w3.org/1999/xlink'
     };
 
@@ -246,7 +247,6 @@ V = Vectorizer = (function() {
         content = V.sanitizeText(content);
         opt = opt || {};
         var lines = content.split('\n');
-        var i = 0;
         var tspan;
 
         // `alignment-baseline` does not work in Firefox.
@@ -266,7 +266,7 @@ V = Vectorizer = (function() {
         this.attr('display', content ? null : 'none');
 
         // Preserve spaces. In other words, we do not want consecutive spaces to get collapsed to one.
-        this.node.setAttributeNS('http://www.w3.org/XML/1998/namespace', 'xml:space', 'preserve');
+        this.attr('xml:space', 'preserve');
 
         // Easy way to erase all `<tspan>` children;
         this.node.textContent = '';
@@ -380,7 +380,10 @@ V = Vectorizer = (function() {
                 // character and make it invisible, making the following lines correctly
                 // relatively positioned. `dy=1em` won't work with empty lines otherwise.
                 vLine.addClass('v-empty-line');
-                vLine.node.style.opacity = 0;
+                // 'opacity' needs to be specified with fill, stroke. Opacity without specification
+                // is not applied in Firefox
+                vLine.node.style.fillOpacity = 0;
+                vLine.node.style.strokeOpacity = 0;
                 vLine.node.textContent = '-';
             }
 
@@ -389,6 +392,26 @@ V = Vectorizer = (function() {
             offset += line.length + 1;      // + 1 = newline character.
         }
 
+        return this;
+    };
+
+    /**
+     * @public
+     * @param {string} name
+     * @returns {Vectorizer}
+     */
+    V.prototype.removeAttr = function(name) {
+
+        var qualifiedName = V.qualifyAttr(name);
+        var el = this.node;
+
+        if (qualifiedName.ns) {
+            if (el.hasAttributeNS(qualifiedName.ns, qualifiedName.local)) {
+                el.removeAttributeNS(qualifiedName.ns, qualifiedName.local);
+            }
+        } else if (el.hasAttribute(name)) {
+            el.removeAttribute(name);
+        }
         return this;
     };
 
@@ -415,13 +438,13 @@ V = Vectorizer = (function() {
 
             for (var attrName in name) {
                 if (name.hasOwnProperty(attrName)) {
-                    V.setAttribute(this.node, attrName, name[attrName]);
+                    this.setAttribute(attrName, name[attrName]);
                 }
             }
 
         } else {
 
-            V.setAttribute(this.node, name, value);
+            this.setAttribute(name, value);
         }
 
         return this;
@@ -447,10 +470,10 @@ V = Vectorizer = (function() {
 
     V.prototype.setAttributes = function(attrs) {
 
-        var key;
-
-        for (key in attrs) {
-            V.setAttribute(this.node, key, attrs[key]);
+        for (var key in attrs) {
+            if (attrs.hasOwnProperty(key)) {
+                this.setAttribute(key, attrs[key]);
+            }
         }
 
         return this;
@@ -462,19 +485,34 @@ V = Vectorizer = (function() {
             els = [els];
         }
 
-        var i, len, el;
-
-        for (i = 0, len = els.length; i < len; i++) {
-            el = els[i];
-            this.node.appendChild(V.isV(el) ? el.node : (el.nodeName && el || el[0]));
+        for (var i = 0, len = els.length; i < len; i++) {
+            this.node.appendChild(V.toNode(els[i]));
         }
 
         return this;
     };
 
-    V.prototype.prepend = function(el) {
+    V.prototype.prepend = function(els) {
 
-        this.node.insertBefore(V.isV(el) ? el.node : el, this.node.firstChild);
+        var child = this.node.firstChild;
+        return child ? V(child).before(els) : this.append(els);
+    };
+
+    V.prototype.before = function(els) {
+
+        var node = this.node;
+        var parent = node.parentNode;
+
+        if (parent) {
+
+            if (!V.isArray(els)) {
+                els = [els];
+            }
+
+            for (var i = 0, len = els.length; i < len; i++) {
+                parent.insertBefore(V.toNode(els[i]), node);
+            }
+        }
 
         return this;
     };
@@ -856,6 +894,36 @@ V = Vectorizer = (function() {
         return spot;
     };
 
+    /**
+     * @private
+     * @param {string} name
+     * @param {string} value
+     * @returns {Vectorizer}
+     */
+    V.prototype.setAttribute = function(name, value) {
+
+        var el = this.node;
+
+        if (value === null) {
+            this.removeAttr(name);
+            return this;
+        }
+
+        var qualifiedName = V.qualifyAttr(name);
+
+        if (qualifiedName.ns) {
+            // Attribute names can be namespaced. E.g. `image` elements
+            // have a `xlink:href` attribute to set the source of the image.
+            el.setAttributeNS(qualifiedName.ns, name, value);
+        } else if (name === 'id') {
+            el.id = value;
+        } else {
+            el.setAttribute(name, value);
+        }
+
+        return this;
+    };
+
     // Create an SVG document element.
     // If `content` is passed, it will be used as the SVG content of the `<svg>` root element.
     V.createSvgDocument = function(content) {
@@ -926,19 +994,24 @@ V = Vectorizer = (function() {
         return xml;
     };
 
-    V.setAttribute = function(el, name, value) {
+    /**
+     * @param {string} name
+     * @returns {{ns: string|null, local: string}} namespace and attribute name
+     */
+    V.qualifyAttr = function(name) {
 
-        if (name.indexOf(':') > -1) {
-            // Attribute names can be namespaced. E.g. `image` elements
-            // have a `xlink:href` attribute to set the source of the image.
+        if (name.indexOf(':') !== -1) {
             var combinedKey = name.split(':');
-            el.setAttributeNS(ns[combinedKey[0]], combinedKey[1], value);
-
-        } else if (name === 'id') {
-            el.id = value;
-        } else {
-            el.setAttribute(name, value);
+            return {
+                ns: ns[combinedKey[0]],
+                local: combinedKey[1]
+            };
         }
+
+        return {
+            ns: null,
+            local: name
+        };
     };
 
     V.parseTransformString = function(transform) {
@@ -1465,6 +1538,10 @@ V = Vectorizer = (function() {
             'h', -(r.width - 2 * topRx),
             'a', topRx, topRy, 0, 0, 0, -topRx, topRy
         ].join(' ');
+    };
+
+    V.toNode = function(el) {
+        return V.isV(el) ? el.node : (el.nodeName && el || el[0]);
     };
 
     return V;

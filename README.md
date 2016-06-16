@@ -90,17 +90,15 @@ To run code style checks:
 grunt test:code-style
 ```
 
+
 ### Code Coverage
 
-It is possible to generate code coverage reports using the existing qunit tests. For example, to output the coverage report in [lcov format](http://ltp.sourceforge.net/coverage/lcov/geninfo.1.php) for all unit tests:
+To output a code coverage report in [lcov format](http://ltp.sourceforge.net/coverage/lcov/geninfo.1.php) for all unit tests:
 ```
-grunt qunit:all_coverage --reporter lcov --coverage
+grunt test:coverage --reporter="lcov"
 ```
+The output will be saved to a new file named `coverage.info` at the root of the project directory.
 
-By default, the output will be saved to `coverage.info` at the root of the project directory. You can change the output file like this:
-```
-grunt qunit:all_coverage --reporter lcov --output customfilename.info --coverage
-```
 
 ### Building Distribution Files
 
@@ -108,6 +106,16 @@ The `dist` directory contains pre-built distribution files. To re-build them, ru
 ```
 grunt dist
 ```
+
+
+## Documentation
+
+The source for the JointJS documentation (plus geometry and Vectorizer libraries) are included in this repository; see the `docs` directory. The documentation can be built into stand-alone HTML documents like this:
+```
+grunt build:docs
+```
+The output of the above command can be found at `build/docs`.
+
 
 
 ## License
@@ -124,5 +132,6 @@ Copyright (c) 2013 client IO
 - [Emanuele Palombo](http://github.com/elbowz)
 - [Charles Hill](http://github.com/chill117)
 - [Daniel K.](http://github.com/FredyC)
+- [Vladimir Talas](http://github.com/vtalas)
 
 [![Bitdeli Badge](https://d2weczhvl823v0.cloudfront.net/DavidDurman/joint/trend.png)](https://bitdeli.com/free "Bitdeli Badge")

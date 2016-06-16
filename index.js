@@ -1,1 +1,3 @@
-module.exports = require('./build/joint');
+'use strict';
+
+module.exports = require('./dist/joint.min');
