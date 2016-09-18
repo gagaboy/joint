@@ -322,6 +322,7 @@ joint.dia.Graph = Backbone.Model.extend({
 
         if (cells.length) {
 
+            cells = _.flattenDeep(cells);
             opt.position = cells.length;
 
             this.startBatch('add');
@@ -890,7 +891,6 @@ joint.dia.Graph = Backbone.Model.extend({
 
             var source = link.get('source');
             var target = link.get('target');
-            var loop = link.hasLoop(opt);
 
             // Discard if it is a point.
             if (inbound && _.has(source, 'id') && source.id === elementB.id) {

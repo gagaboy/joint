@@ -16,7 +16,7 @@ joint.dia.Cell = Backbone.Model.extend({
         this.attributes = {};
         if (options && options.collection) this.collection = options.collection;
         if (options && options.parse) attrs = this.parse(attrs, options) || {};
-        if (defaults = _.result(this, 'defaults')) {
+        if ((defaults = _.result(this, 'defaults'))) {
             //<custom code>
             // Replaced the call to _.defaults with _.merge.
             attrs = _.merge({}, defaults, attrs);
@@ -90,6 +90,9 @@ joint.dia.Cell = Backbone.Model.extend({
         this.on('change:attrs', this.processPorts, this);
     },
 
+    /**
+     * @deprecated
+     */
     processPorts: function() {
 
         // Whenever `attrs` changes, we extract ports from the `attrs` object and store it
@@ -528,7 +531,7 @@ joint.dia.Cell = Backbone.Model.extend({
 
         var setter = _.bind(function(runtime) {
 
-            var id, progress, propertyValue, status;
+            var id, progress, propertyValue;
 
             firstFrameTime = firstFrameTime || runtime;
             runtime -= firstFrameTime;
@@ -795,7 +798,7 @@ joint.dia.CellView = joint.mvc.View.extend({
 
         // set partial flag if the highlighted element is not the entire view.
         opt = opt || {};
-        opt.partial = el != this.el;
+        opt.partial = (el !== this.el);
 
         this.notify('cell:highlight', el, opt);
         return this;
@@ -817,27 +820,28 @@ joint.dia.CellView = joint.mvc.View.extend({
     findMagnet: function(el) {
 
         var $el = this.$(el);
+        var $rootEl = this.$el;
 
-        if ($el.length === 0 || $el[0] === this.el) {
+        if ($el.length === 0) {
+            $el = $rootEl;
+        }
 
-            // If the overall cell has set `magnet === false`, then return `undefined` to
-            // announce there is no magnet found for this cell.
-            // This is especially useful to set on cells that have 'ports'. In this case,
-            // only the ports have set `magnet === true` and the overall element has `magnet === false`.
-            var attrs = this.model.get('attrs') || {};
-            if (attrs['.'] && attrs['.']['magnet'] === false) {
-                return undefined;
+        do {
+
+            var magnet = $el.attr('magnet');
+            if ((magnet || $el.is($rootEl)) && magnet !== 'false') {
+                return $el[0];
             }
 
-            return this.el;
-        }
+            $el = $el.parent();
 
-        if ($el.attr('magnet')) {
+        } while ($el.length > 0);
 
-            return $el[0];
-        }
-
-        return this.findMagnet($el.parent());
+        // If the overall cell has set `magnet === false`, then return `undefined` to
+        // announce there is no magnet found for this cell.
+        // This is especially useful to set on cells that have 'ports'. In this case,
+        // only the ports have set `magnet === true` and the overall element has `magnet === false`.
+        return undefined;
     },
 
     // `selector` is a CSS selector or `'.'`. `filter` must be in the special JointJS filter format:
@@ -929,7 +933,7 @@ joint.dia.CellView = joint.mvc.View.extend({
         if (el) {
 
             var nthChild = V(el).index() + 1;
-            var selector = el.tagName + ':nth-child(' + nthChild + ')';
+            selector = el.tagName + ':nth-child(' + nthChild + ')';
 
             if (prevSelector) {
                 selector += ' > ' + prevSelector;

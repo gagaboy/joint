@@ -231,81 +231,20 @@ var joint = {
         // Copy all the properties to the first argument from the following arguments.
         // All the properties will be overwritten by the properties from the following
         // arguments. Inherited properties are ignored.
-        mixin: function() {
-
-            var target = arguments[0];
-
-            for (var i = 1, l = arguments.length; i < l; i++) {
-
-                var extension = arguments[i];
-
-                // Only functions and objects can be mixined.
-
-                if ((Object(extension) !== extension) &&
-                    !_.isFunction(extension) &&
-                    (extension === null || extension === undefined)) {
-
-                    continue;
-                }
-
-                _.each(extension, function(copy, key) {
-
-                    if (this.mixin.deep && (Object(copy) === copy)) {
-
-                        if (!target[key]) {
-
-                            target[key] = _.isArray(copy) ? [] : {};
-                        }
-
-                        this.mixin(target[key], copy);
-                        return;
-                    }
-
-                    if (target[key] !== copy) {
-
-                        if (!this.mixin.supplement || !target.hasOwnProperty(key)) {
-
-                            target[key] = copy;
-                        }
-
-                    }
-
-                }, this);
-            }
-
-            return target;
-        },
+        mixin: _.assign,
 
         // Copy all properties to the first argument from the following
         // arguments only in case if they don't exists in the first argument.
         // All the function propererties in the first argument will get
         // additional property base pointing to the extenders same named
         // property function's call method.
-        supplement: function() {
-
-            this.mixin.supplement = true;
-            var ret = this.mixin.apply(this, arguments);
-            this.mixin.supplement = false;
-            return ret;
-        },
+        supplement: _.defaults,
 
         // Same as `mixin()` but deep version.
-        deepMixin: function() {
-
-            this.mixin.deep = true;
-            var ret = this.mixin.apply(this, arguments);
-            this.mixin.deep = false;
-            return ret;
-        },
+        deepMixin: _.mixin,
 
         // Same as `supplement()` but deep version.
-        deepSupplement: function() {
-
-            this.mixin.deep = this.mixin.supplement = true;
-            var ret = this.mixin.apply(this, arguments);
-            this.mixin.deep = this.mixin.supplement = false;
-            return ret;
-        },
+        deepSupplement: _.defaultsDeep,
 
         normalizeEvent: function(evt) {
 
@@ -596,56 +535,80 @@ var joint = {
                 // and so we can bypass this error.
 
                 // Keep the async nature of the function.
-                return setTimeout(function() { callback(null, url); }, 0);
+                return setTimeout(function() {
+                    callback(null, url);
+                }, 0);
             }
 
-            var canvas = document.createElement('canvas');
-            var img = document.createElement('img');
+            // chrome IE10 IE11
+            var modernHandler = function(xhr, callback) {
 
-            img.onload = function() {
+                if (xhr.status === 200) {
 
-                var ctx = canvas.getContext('2d');
+                    var reader = new FileReader();
 
-                canvas.width = img.width;
-                canvas.height = img.height;
+                    reader.onload = function(evt) {
+                        var dataUri = evt.target.result;
+                        callback(null, dataUri);
+                    };
 
-                ctx.drawImage(img, 0, 0);
+                    reader.onerror = function() {
+                        callback(new Error('Failed to load image ' + url));
+                    };
 
-                try {
-
-                    // Guess the type of the image from the url suffix.
-                    var suffix = (url.split('.').pop()) || 'png';
-                    // A little correction for JPEGs. There is no image/jpg mime type but image/jpeg.
-                    var type = 'image/' + (suffix === 'jpg') ? 'jpeg' : suffix;
-                    var dataUri = canvas.toDataURL(type);
-
-                } catch (e) {
-
-                    if (/\.svg$/.test(url)) {
-                        // IE throws a security error if we try to render an SVG into the canvas.
-                        // Luckily for us, we don't need canvas at all to convert
-                        // SVG to data uri. We can just use AJAX to load the SVG string
-                        // and construct the data uri ourselves.
-                        var xhr = window.XMLHttpRequest ? new XMLHttpRequest : new ActiveXObject('Microsoft.XMLHTTP');
-                        xhr.open('GET', url, false);
-                        xhr.send(null);
-                        var svg = xhr.responseText;
-
-                        return callback(null, 'data:image/svg+xml,' + encodeURIComponent(svg));
-                    }
-
-                    console.error(img.src, 'fails to convert', e);
+                    reader.readAsDataURL(xhr.response);
+                } else {
+                    callback(new Error('Failed to load image ' + url));
                 }
 
-                callback(null, dataUri);
             };
 
-            img.ononerror = function() {
+            var legacyHandler = function(xhr, callback) {
 
-                callback(new Error('Failed to load image.'));
+                var Uint8ToString = function(u8a) {
+                    var CHUNK_SZ = 0x8000;
+                    var c = [];
+                    for (var i = 0; i < u8a.length; i += CHUNK_SZ) {
+                        c.push(String.fromCharCode.apply(null, u8a.subarray(i, i + CHUNK_SZ)));
+                    }
+                    return c.join('');
+                };
+
+
+                if (xhr.status === 200) {
+
+                    var bytes = new Uint8Array(xhr.response);
+
+                    var suffix = (url.split('.').pop()) || 'png';
+                    var map = {
+                        'svg': 'svg+xml'
+                    };
+                    var meta = 'data:image/' + (map[suffix] || suffix) + ';base64,';
+                    var b64encoded = meta + btoa(Uint8ToString(bytes));
+                    callback(null, b64encoded);
+                } else {
+                    callback(new Error('Failed to load image ' + url));
+                }
             };
 
-            img.src = url;
+            var xhr = new XMLHttpRequest();
+
+            xhr.open('GET', url, true);
+            xhr.addEventListener('error', function() {
+                callback(new Error('Failed to load image ' + url));
+            });
+
+            xhr.responseType = window.FileReader ? 'blob' : 'arraybuffer';
+
+            xhr.addEventListener('load', function() {
+                if (window.FileReader) {
+                    modernHandler(xhr, callback);
+                } else {
+                    legacyHandler(xhr, callback);
+                }
+            });
+
+            xhr.send();
         },
 
         getElementBBox: function(el) {
@@ -1077,16 +1040,28 @@ var joint = {
                 }
 
                 switch (type) {
-                    case 'n': comma = true; type = 'g'; break;
-                    case '%': scale = 100; suffix = '%'; type = 'f'; break;
-                    case 'p': scale = 100; suffix = '%'; type = 'r'; break;
+                    case 'n':
+                        comma = true; type = 'g';
+                        break;
+                    case '%':
+                        scale = 100; suffix = '%'; type = 'f';
+                        break;
+                    case 'p':
+                        scale = 100; suffix = '%'; type = 'r';
+                        break;
                     case 'b':
                     case 'o':
                     case 'x':
-                    case 'X': if (symbol === '#') prefix = '0' + type.toLowerCase();
+                    case 'X':
+                        if (symbol === '#') prefix = '0' + type.toLowerCase();
+                        break;
                     case 'c':
-                    case 'd': integer = true; precision = 0; break;
-                    case 's': scale = -1; type = 'r'; break;
+                    case 'd':
+                        integer = true; precision = 0;
+                        break;
+                    case 's':
+                        scale = -1; type = 'r';
+                        break;
                 }
 
                 if (symbol === '$') {

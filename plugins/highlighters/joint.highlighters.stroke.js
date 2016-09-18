@@ -3,17 +3,26 @@ joint.highlighters.stroke = {
     defaultOptions: {
         padding: 3,
         rx: 0,
-        ry: 0
+        ry: 0,
+        attrs: {
+            'stroke-width': 3,
+            stroke: '#FEB663'
+        }
     },
 
     _views: {},
 
+    /**
+     * @param {joint.dia.CellView} cellView
+     * @param {Element} magnetEl
+     * @param {object=} opt
+     */
     highlight: function(cellView, magnetEl, opt) {
 
         // Only highlight once.
         if (this._views[magnetEl.id]) return;
 
-        opt = _.defaults(opt || {}, this.defaultOptions);
+        var options = _.defaults(opt || {}, this.defaultOptions);
 
         var magnetVel = V(magnetEl);
         var magnetBBox = magnetVel.bbox(true/* without transforms */);
@@ -26,18 +35,20 @@ joint.highlighters.stroke = {
 
             // Failed to get path data from magnet element.
             // Draw a rectangle around the entire cell view instead.
-            pathData = V.rectToPath(_.extend({}, opt, magnetBBox));
+            pathData = V.rectToPath(_.extend({}, options, magnetBBox));
         }
 
         var highlightVel = V('path').attr({
             d: pathData,
-            'pointer-events': 'none'
-        });
+            'pointer-events': 'none',
+            'vector-effect': 'non-scaling-stroke',
+            'fill': 'none'
+        }).attr(options.attrs);
 
         highlightVel.transform(cellView.el.getCTM().inverse());
         highlightVel.transform(magnetEl.getCTM());
 
-        var padding = opt.padding;
+        var padding = options.padding;
         if (padding) {
 
             // Add padding to the highlight element.
@@ -69,9 +80,12 @@ joint.highlighters.stroke = {
         cellView.vel.append(highlightVel);
     },
 
+    /**
+     * @param {joint.dia.CellView} cellView
+     * @param {Element} magnetEl
+     * @param {object=} opt
+     */
     unhighlight: function(cellView, magnetEl, opt) {
-
-        opt = _.defaults(opt || {}, this.defaultOptions);
 
         if (this._views[magnetEl.id]) {
             this._views[magnetEl.id].remove();

@@ -149,10 +149,8 @@ joint.dia.Paper = joint.mvc.View.extend({
         'touchend': 'mouseclick',
         'touchmove': 'pointermove',
         'mousemove': 'pointermove',
-        'mouseover .element': 'cellMouseover',
-        'mouseover .link': 'cellMouseover',
-        'mouseout .element': 'cellMouseout',
-        'mouseout .link': 'cellMouseout',
+        'mouseover .joint-cell': 'cellMouseover',
+        'mouseout .joint-cell': 'cellMouseout',
         'contextmenu': 'contextmenu',
         'mousewheel': 'mousewheel',
         'DOMMouseScroll': 'mousewheel'
@@ -880,8 +878,8 @@ joint.dia.Paper = joint.mvc.View.extend({
 
             // check for built-in types
             var type = _.chain(opt)
-                    .pick('embedding', 'connecting', 'magnetAvailability', 'elementAvailability')
-                    .keys().first().value();
+                .pick('embedding', 'connecting', 'magnetAvailability', 'elementAvailability')
+                .keys().first().value();
 
             highlighterDef = (type && paperOpt.highlighting[type]) || paperOpt.highlighting['default'];
         }
@@ -890,6 +888,13 @@ joint.dia.Paper = joint.mvc.View.extend({
         // This allows the case to not highlight cell(s) in certain cases.
         // For example, if you want to NOT highlight when embedding elements.
         if (!highlighterDef) return false;
+
+        // Allow specifying a highlighter by name.
+        if (_.isString(highlighterDef)) {
+            highlighterDef = {
+                name: highlighterDef
+            };
+        }
 
         var name = highlighterDef.name;
         var highlighter = paperOpt.highlighterNamespace[name];
@@ -907,7 +912,7 @@ joint.dia.Paper = joint.mvc.View.extend({
 
         return {
             highlighter: highlighter,
-            options: highlighterDef.options,
+            options: highlighterDef.options || {},
             name: name
         };
     },
@@ -999,16 +1004,18 @@ joint.dia.Paper = joint.mvc.View.extend({
     guard: function(evt, view) {
 
         if (this.options.guard && this.options.guard(evt, view)) {
-
             return true;
         }
 
+        if (evt.data && !_.isUndefined(evt.data.guarded)) {
+            return evt.data.guarded;
+        }
+
         if (view && view.model && (view.model instanceof joint.dia.Cell)) {
-
             return false;
+        }
 
-        } else if (this.svg === evt.target || this.el === evt.target || $.contains(this.svg, evt.target)) {
-
+        if (this.svg === evt.target || this.el === evt.target || $.contains(this.svg, evt.target)) {
             return false;
         }
 

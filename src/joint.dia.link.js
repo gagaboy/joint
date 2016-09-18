@@ -790,16 +790,12 @@ joint.dia.LinkView = joint.dia.CellView.extend({
 
                     // 1. Find the closest sample & its left and right neighbours.
                     var minSqDistance = Infinity;
-                    var closestSample;
-                    var closestSampleIndex;
-                    var p;
-                    var sqDistance;
-                    for (var i = 0, len = samples.length; i < len; i++) {
-                        p = samples[i];
-                        sqDistance = g.line(p, labelCoordinates).squaredLength();
+                    var closestSampleIndex, sample, sqDistance;
+                    for (var i = 0; i < samples.length; i++) {
+                        sample = samples[i];
+                        sqDistance = g.line(sample, labelCoordinates).squaredLength();
                         if (sqDistance < minSqDistance) {
                             minSqDistance = sqDistance;
-                            closestSample = p;
                             closestSampleIndex = i;
                         }
                     }
@@ -1217,7 +1213,7 @@ joint.dia.LinkView = joint.dia.CellView.extend({
         if (!selectorOrPoint.id) {
 
             // If the source is a point, we don't need a reference point to find the sticky point of connection.
-            spot = g.point(selectorOrPoint);
+            spot = g.Point(selectorOrPoint);
 
         } else {
 
@@ -1227,14 +1223,14 @@ joint.dia.LinkView = joint.dia.CellView.extend({
             // in order to follow paper viewport transformations (scale/rotate).
             // `_sourceBbox` (`_targetBbox`) comes from `_sourceBboxUpdate` (`_sourceBboxUpdate`)
             // method, it exists since first render and are automatically updated
-            var spotBbox = end === 'source' ? this.sourceBBox : this.targetBBox;
+            var spotBBox = g.Rect(end === 'source' ? this.sourceBBox : this.targetBBox);
 
             var reference;
 
             if (!referenceSelectorOrPoint.id) {
 
                 // Reference was passed as a point, therefore, we're ready to find the sticky point of connection on the source element.
-                reference = g.point(referenceSelectorOrPoint);
+                reference = g.Point(referenceSelectorOrPoint);
 
             } else {
 
@@ -1242,48 +1238,49 @@ joint.dia.LinkView = joint.dia.CellView.extend({
                 // element boundary closest to the source element.
                 // Get the bounding box of the spot relative to the paper viewport. This is necessary
                 // in order to follow paper viewport transformations (scale/rotate).
-                var referenceBbox = end === 'source' ? this.targetBBox : this.sourceBBox;
+                var referenceBBox = g.Rect(end === 'source' ? this.targetBBox : this.sourceBBox);
 
-                reference = g.rect(referenceBbox).intersectionWithLineFromCenterToPoint(g.rect(spotBbox).center());
-                reference = reference || g.rect(referenceBbox).center();
+                reference = referenceBBox.intersectionWithLineFromCenterToPoint(spotBBox.center());
+                reference = reference || referenceBBox.center();
             }
 
+            var paperOptions = this.paper.options;
             // If `perpendicularLinks` flag is set on the paper and there are vertices
             // on the link, then try to find a connection point that makes the link perpendicular
             // even though the link won't point to the center of the targeted object.
-            if (this.paper.options.perpendicularLinks || this.options.perpendicular) {
+            if (paperOptions.perpendicularLinks || this.options.perpendicular) {
 
-                var horizontalLineRect = g.rect(0, reference.y, this.paper.options.width, 1);
-                var verticalLineRect = g.rect(reference.x, 0, 1, this.paper.options.height);
                 var nearestSide;
+                var spotOrigin = spotBBox.origin();
+                var spotCorner = spotBBox.corner();
 
-                if (horizontalLineRect.intersect(g.rect(spotBbox))) {
+                if (spotOrigin.y <= reference.y && reference.y <= spotCorner.y) {
 
-                    nearestSide = g.rect(spotBbox).sideNearestToPoint(reference);
+                    nearestSide = spotBBox.sideNearestToPoint(reference);
                     switch (nearestSide) {
                         case 'left':
-                            spot = g.point(spotBbox.x, reference.y);
+                            spot = g.Point(spotOrigin.x, reference.y);
                             break;
                         case 'right':
-                            spot = g.point(spotBbox.x + spotBbox.width, reference.y);
+                            spot = g.Point(spotCorner.x, reference.y);
                             break;
                         default:
-                            spot = g.rect(spotBbox).center();
+                            spot = spotBBox.center();
                             break;
                     }
 
-                } else if (verticalLineRect.intersect(g.rect(spotBbox))) {
+                } else if (spotOrigin.x <= reference.x && reference.x <= spotCorner.x) {
 
-                    nearestSide = g.rect(spotBbox).sideNearestToPoint(reference);
+                    nearestSide = spotBBox.sideNearestToPoint(reference);
                     switch (nearestSide) {
                         case 'top':
-                            spot = g.point(reference.x, spotBbox.y);
+                            spot = g.Point(reference.x, spotOrigin.y);
                             break;
                         case 'bottom':
-                            spot = g.point(reference.x, spotBbox.y + spotBbox.height);
+                            spot = g.Point(reference.x, spotCorner.y);
                             break;
                         default:
-                            spot = g.rect(spotBbox).center();
+                            spot = spotBBox.center();
                             break;
                     }
 
@@ -1292,22 +1289,21 @@ joint.dia.LinkView = joint.dia.CellView.extend({
                     // If there is no intersection horizontally or vertically with the object bounding box,
                     // then we fall back to the regular situation finding straight line (not perpendicular)
                     // between the object and the reference point.
-
-                    spot = g.rect(spotBbox).intersectionWithLineFromCenterToPoint(reference);
-                    spot = spot || g.rect(spotBbox).center();
+                    spot = spotBBox.intersectionWithLineFromCenterToPoint(reference);
+                    spot = spot || spotBBox.center();
                 }
 
-            } else if (this.paper.options.linkConnectionPoint) {
+            } else if (paperOptions.linkConnectionPoint) {
 
                 var view = end === 'target' ? this.targetView : this.sourceView;
                 var magnet = end === 'target' ? this.targetMagnet : this.sourceMagnet;
 
-                spot = this.paper.options.linkConnectionPoint(this, view, magnet, reference);
+                spot = paperOptions.linkConnectionPoint(this, view, magnet, reference);
 
             } else {
 
-                spot = g.rect(spotBbox).intersectionWithLineFromCenterToPoint(reference);
-                spot = spot || g.rect(spotBbox).center();
+                spot = spotBBox.intersectionWithLineFromCenterToPoint(reference);
+                spot = spot || spotBBox.center();
             }
         }
 
@@ -1539,184 +1535,180 @@ joint.dia.LinkView = joint.dia.CellView.extend({
 
         switch (this._action) {
 
-        case 'vertex-move':
+            case 'vertex-move':
 
-            var vertices = _.clone(this.model.get('vertices'));
-            vertices[this._vertexIdx] = { x: x, y: y };
-            this.model.set('vertices', vertices, { ui: true });
-            break;
+                var vertices = _.clone(this.model.get('vertices'));
+                vertices[this._vertexIdx] = { x: x, y: y };
+                this.model.set('vertices', vertices, { ui: true });
+                break;
 
-        case 'label-move':
+            case 'label-move':
 
-            var dragPoint = { x: x, y: y };
-            var label = this.model.get('labels')[this._labelIdx];
-            var samples = this._samples;
-            var minSqDistance = Infinity;
-            var closestSample;
-            var closestSampleIndex;
-            var p;
-            var sqDistance;
-            for (var i = 0, len = samples.length; i < len; i++) {
-                p = samples[i];
-                sqDistance = g.line(p, dragPoint).squaredLength();
-                if (sqDistance < minSqDistance) {
-                    minSqDistance = sqDistance;
-                    closestSample = p;
-                    closestSampleIndex = i;
-                }
-            }
-            var prevSample = samples[closestSampleIndex - 1];
-            var nextSample = samples[closestSampleIndex + 1];
-
-            var closestSampleDistance = g.point(closestSample).distance(dragPoint);
-            var offset = 0;
-            if (prevSample && nextSample) {
-                offset = g.line(prevSample, nextSample).pointOffset(dragPoint);
-            } else if (prevSample) {
-                offset = g.line(prevSample, closestSample).pointOffset(dragPoint);
-            } else if (nextSample) {
-                offset = g.line(closestSample, nextSample).pointOffset(dragPoint);
-            }
-
-            this.model.label(this._labelIdx, {
-                position: {
-                    distance: closestSample.distance / this._linkLength,
-                    offset: offset
-                }
-            });
-            break;
-
-        case 'arrowhead-move':
-
-            if (this.paper.options.snapLinks) {
-
-                // checking view in close area of the pointer
-
-                var r = this.paper.options.snapLinks.radius || 50;
-                var viewsInArea = this.paper.findViewsInArea({ x: x - r, y: y - r, width: 2 * r, height: 2 * r });
-
-                if (this._closestView) {
-                    this._closestView.unhighlight(this._closestEnd.selector, {
-                        connecting: true,
-                        snapping: true
-                    });
-                }
-                this._closestView = this._closestEnd = null;
-
-                var distance;
-                var minDistance = Number.MAX_VALUE;
-                var pointer = g.point(x, y);
-
-                _.each(viewsInArea, function(view) {
-
-                    // skip connecting to the element in case '.': { magnet: false } attribute present
-                    if (view.el.getAttribute('magnet') !== 'false') {
-
-                        // find distance from the center of the model to pointer coordinates
-                        distance = view.model.getBBox().center().distance(pointer);
-
-                        // the connection is looked up in a circle area by `distance < r`
-                        if (distance < r && distance < minDistance) {
-
-                            if (this.paper.options.validateConnection.apply(
-                                this.paper, this._validateConnectionArgs(view, null)
-                            )) {
-                                minDistance = distance;
-                                this._closestView = view;
-                                this._closestEnd = { id: view.model.id };
-                            }
-                        }
+                var dragPoint = { x: x, y: y };
+                var samples = this._samples;
+                var minSqDistance = Infinity;
+                var closestSample;
+                var closestSampleIndex;
+                var p;
+                var sqDistance;
+                for (var i = 0, len = samples.length; i < len; i++) {
+                    p = samples[i];
+                    sqDistance = g.line(p, dragPoint).squaredLength();
+                    if (sqDistance < minSqDistance) {
+                        minSqDistance = sqDistance;
+                        closestSample = p;
+                        closestSampleIndex = i;
                     }
+                }
+                var prevSample = samples[closestSampleIndex - 1];
+                var nextSample = samples[closestSampleIndex + 1];
+                var offset = 0;
+                if (prevSample && nextSample) {
+                    offset = g.line(prevSample, nextSample).pointOffset(dragPoint);
+                } else if (prevSample) {
+                    offset = g.line(prevSample, closestSample).pointOffset(dragPoint);
+                } else if (nextSample) {
+                    offset = g.line(closestSample, nextSample).pointOffset(dragPoint);
+                }
 
-                    view.$('[magnet]').each(_.bind(function(index, magnet) {
+                this.model.label(this._labelIdx, {
+                    position: {
+                        distance: closestSample.distance / this._linkLength,
+                        offset: offset
+                    }
+                });
+                break;
 
-                        var bbox = V(magnet).bbox(false, this.paper.viewport);
+            case 'arrowhead-move':
 
-                        distance = pointer.distance({
-                            x: bbox.x + bbox.width / 2,
-                            y: bbox.y + bbox.height / 2
+                if (this.paper.options.snapLinks) {
+
+                    // checking view in close area of the pointer
+
+                    var r = this.paper.options.snapLinks.radius || 50;
+                    var viewsInArea = this.paper.findViewsInArea({ x: x - r, y: y - r, width: 2 * r, height: 2 * r });
+
+                    if (this._closestView) {
+                        this._closestView.unhighlight(this._closestEnd.selector, {
+                            connecting: true,
+                            snapping: true
                         });
+                    }
+                    this._closestView = this._closestEnd = null;
 
-                        if (distance < r && distance < minDistance) {
+                    var distance;
+                    var minDistance = Number.MAX_VALUE;
+                    var pointer = g.point(x, y);
 
-                            if (this.paper.options.validateConnection.apply(
-                                this.paper, this._validateConnectionArgs(view, magnet)
-                            )) {
-                                minDistance = distance;
-                                this._closestView = view;
-                                this._closestEnd = {
-                                    id: view.model.id,
-                                    selector: view.getSelector(magnet),
-                                    port: magnet.getAttribute('port')
-                                };
+                    _.each(viewsInArea, function(view) {
+
+                        // skip connecting to the element in case '.': { magnet: false } attribute present
+                        if (view.el.getAttribute('magnet') !== 'false') {
+
+                            // find distance from the center of the model to pointer coordinates
+                            distance = view.model.getBBox().center().distance(pointer);
+
+                            // the connection is looked up in a circle area by `distance < r`
+                            if (distance < r && distance < minDistance) {
+
+                                if (this.paper.options.validateConnection.apply(
+                                    this.paper, this._validateConnectionArgs(view, null)
+                                )) {
+                                    minDistance = distance;
+                                    this._closestView = view;
+                                    this._closestEnd = { id: view.model.id };
+                                }
                             }
                         }
 
-                    }, this));
+                        view.$('[magnet]').each(_.bind(function(index, magnet) {
 
-                }, this);
+                            var bbox = V(magnet).bbox(false, this.paper.viewport);
 
-                if (this._closestView) {
-                    this._closestView.highlight(this._closestEnd.selector, {
-                        connecting: true,
-                        snapping: true
-                    });
-                }
+                            distance = pointer.distance({
+                                x: bbox.x + bbox.width / 2,
+                                y: bbox.y + bbox.height / 2
+                            });
 
-                this.model.set(this._arrowhead, this._closestEnd || { x: x, y: y }, { ui: true });
+                            if (distance < r && distance < minDistance) {
 
-            } else {
+                                if (this.paper.options.validateConnection.apply(
+                                    this.paper, this._validateConnectionArgs(view, magnet)
+                                )) {
+                                    minDistance = distance;
+                                    this._closestView = view;
+                                    this._closestEnd = {
+                                        id: view.model.id,
+                                        selector: view.getSelector(magnet),
+                                        port: magnet.getAttribute('port')
+                                    };
+                                }
+                            }
 
-                // checking views right under the pointer
+                        }, this));
 
-                // Touchmove event's target is not reflecting the element under the coordinates as mousemove does.
-                // It holds the element when a touchstart triggered.
-                var target = (evt.type === 'mousemove')
-                    ? evt.target
-                    : document.elementFromPoint(evt.clientX, evt.clientY);
+                    }, this);
 
-                if (this._targetEvent !== target) {
-                    // Unhighlight the previous view under pointer if there was one.
-                    if (this._magnetUnderPointer) {
-                        this._viewUnderPointer.unhighlight(this._magnetUnderPointer, {
-                            connecting: true
+                    if (this._closestView) {
+                        this._closestView.highlight(this._closestEnd.selector, {
+                            connecting: true,
+                            snapping: true
                         });
                     }
 
-                    this._viewUnderPointer = this.paper.findView(target);
-                    if (this._viewUnderPointer) {
-                        // If we found a view that is under the pointer, we need to find the closest
-                        // magnet based on the real target element of the event.
-                        this._magnetUnderPointer = this._viewUnderPointer.findMagnet(target);
+                    this.model.set(this._arrowhead, this._closestEnd || { x: x, y: y }, { ui: true });
 
-                        if (this._magnetUnderPointer && this.paper.options.validateConnection.apply(
-                            this.paper,
-                            this._validateConnectionArgs(this._viewUnderPointer, this._magnetUnderPointer)
-                        )) {
-                            // If there was no magnet found, do not highlight anything and assume there
-                            // is no view under pointer we're interested in reconnecting to.
-                            // This can only happen if the overall element has the attribute `'.': { magnet: false }`.
-                            if (this._magnetUnderPointer) {
-                                this._viewUnderPointer.highlight(this._magnetUnderPointer, {
-                                    connecting: true
-                                });
+                } else {
+
+                    // checking views right under the pointer
+
+                    // Touchmove event's target is not reflecting the element under the coordinates as mousemove does.
+                    // It holds the element when a touchstart triggered.
+                    var target = (evt.type === 'mousemove')
+                        ? evt.target
+                        : document.elementFromPoint(evt.clientX, evt.clientY);
+
+                    if (this._targetEvent !== target) {
+                        // Unhighlight the previous view under pointer if there was one.
+                        if (this._magnetUnderPointer) {
+                            this._viewUnderPointer.unhighlight(this._magnetUnderPointer, {
+                                connecting: true
+                            });
+                        }
+
+                        this._viewUnderPointer = this.paper.findView(target);
+                        if (this._viewUnderPointer) {
+                            // If we found a view that is under the pointer, we need to find the closest
+                            // magnet based on the real target element of the event.
+                            this._magnetUnderPointer = this._viewUnderPointer.findMagnet(target);
+
+                            if (this._magnetUnderPointer && this.paper.options.validateConnection.apply(
+                                this.paper,
+                                this._validateConnectionArgs(this._viewUnderPointer, this._magnetUnderPointer)
+                            )) {
+                                // If there was no magnet found, do not highlight anything and assume there
+                                // is no view under pointer we're interested in reconnecting to.
+                                // This can only happen if the overall element has the attribute `'.': { magnet: false }`.
+                                if (this._magnetUnderPointer) {
+                                    this._viewUnderPointer.highlight(this._magnetUnderPointer, {
+                                        connecting: true
+                                    });
+                                }
+                            } else {
+                                // This type of connection is not valid. Disregard this magnet.
+                                this._magnetUnderPointer = null;
                             }
                         } else {
-                            // This type of connection is not valid. Disregard this magnet.
+                            // Make sure we'll unset previous magnet.
                             this._magnetUnderPointer = null;
                         }
-                    } else {
-                        // Make sure we'll unset previous magnet.
-                        this._magnetUnderPointer = null;
                     }
+
+                    this._targetEvent = target;
+
+                    this.model.set(this._arrowhead, { x: x, y: y }, { ui: true });
                 }
-
-                this._targetEvent = target;
-
-                this.model.set(this._arrowhead, { x: x, y: y }, { ui: true });
-            }
-
-            break;
+                break;
         }
 
         this._dx = x;
