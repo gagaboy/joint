@@ -15,7 +15,11 @@
 
         iframes = document.querySelectorAll('iframe');
         loadVisibleIFrames();
+
+        document.querySelector('.docs-content').addEventListener('scroll', debounce(loadVisibleIFrames, 400));
         window.addEventListener('scroll', debounce(loadVisibleIFrames, 400));
+
+        openSections();
     });
 
     function loadVisibleIFrames() {
@@ -27,6 +31,20 @@
             if (!iframeIsLoaded(iframe)) {
                 loadIFrame(iframe);
             }
+        }
+    }
+
+    function openSections() {
+
+        var prototypeSection = document.querySelector('[href="#prototype"]');
+        var gSection = document.querySelector('[href="#g"]');
+
+        if (prototypeSection) {
+            addClassToEl(prototypeSection.parentNode, 'open');
+        }
+
+        if (gSection) {
+            addClassToEl(gSection.parentNode, 'open');
         }
     }
 
