@@ -1,5 +1,3 @@
-//      JointJS library.
-//      (c) 2011-2013 client IO
 
 joint.shapes.basic = {};
 
@@ -246,6 +244,7 @@ joint.shapes.basic.Rhombus = joint.shapes.basic.Path.extend({
             },
             'text': {
                 'ref-y': .5,
+                'ref-dy': null,
                 'y-alignment': 'middle'
             }
         }
@@ -407,7 +406,6 @@ joint.shapes.basic.TextBlock = joint.shapes.basic.Generic.extend({
             },
             '.content': {
                 text: '',
-                ref: 'rect',
                 'ref-x': .5,
                 'ref-y': .5,
                 'y-alignment': 'middle',
@@ -490,7 +488,7 @@ joint.shapes.basic.TextBlockView = joint.dia.ElementView.extend({
 
         if (!joint.env.test('svgforeignobject')) {
 
-            this.listenTo(this.model, 'change:content', function(cell) {
+            this.listenTo(this.model, 'change:content change:size', function(cell) {
                 // avoiding pass of extra paramters
                 this.updateContent(cell);
             });
@@ -499,9 +497,9 @@ joint.shapes.basic.TextBlockView = joint.dia.ElementView.extend({
 
     update: function(cell, renderingOnlyAttrs) {
 
-        if (joint.env.test('svgforeignobject')) {
+        var model = this.model;
 
-            var model = this.model;
+        if (!joint.env.test('svgforeignobject')) {
 
             // Update everything but the content first.
             var noTextAttrs = _.omit(renderingOnlyAttrs || model.get('attrs'), '.content');

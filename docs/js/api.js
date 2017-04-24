@@ -13,7 +13,7 @@
         initializeNavSearch();
         initializeNavCollapsible();
 
-        iframes = document.querySelectorAll('iframe');
+        iframes = document.querySelectorAll('.docs-content iframe[data-src]');
         loadVisibleIFrames();
 
         document.querySelector('.docs-content').addEventListener('scroll', debounce(loadVisibleIFrames, 400));
@@ -53,7 +53,7 @@
         var loadingElem, loadingElemChild, loadingTextElemChild, top, left;
         var loadingSize = 50;
         var loadingHeightMiddle = loadingSize / 2; // animation circle height
-        var loadingWidthMiddle = ( loadingSize + 110) / 2; // animation + text 'demo loading'
+        var loadingWidthMiddle = (loadingSize + 110) / 2; // animation + text 'demo loading'
 
         // Don't load again, if already loading.
         if (elHasClass(iframe, 'loading')) return;

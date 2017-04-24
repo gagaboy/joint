@@ -23,6 +23,7 @@ module.exports = function(grunt) {
             'src/core.js',
             'src/joint.mvc.view.js',
             'src/joint.dia.graph.js',
+            'src/joint.dia.attributes.js',
             'src/joint.dia.cell.js',
             'src/joint.dia.element.js',
             'src/joint.dia.link.js',
@@ -196,6 +197,15 @@ module.exports = function(grunt) {
             }
         },
         concat: {
+            types: {
+                src: [
+                    'types/joint.head.d.ts',
+                    'types/geometry.d.ts',
+                    'types/vectorizer.d.ts',
+                    'types/joint.d.ts'
+                ],
+                dest: 'build/joint.d.ts'
+            },
             geometry: {
                 files: {
                     'build/geometry.js': [].concat(
@@ -523,6 +533,12 @@ module.exports = function(grunt) {
                     allCSSPlugins()
                 ),
                 tasks: ['build']
+            },
+            types: {
+                files: [
+                    'types/**/*'
+                ],
+                tasks: ['newer:concat:types']
             }
         },
         env: {
@@ -747,7 +763,8 @@ module.exports = function(grunt) {
         'newer:cssmin:joint',
         'newer:concat:geometry',
         'newer:concat:vectorizer',
-        'newer:concat:joint'
+        'newer:concat:joint',
+        'newer:concat:types'
     ]);
 
     grunt.registerTask('build', ['build:joint']);
@@ -773,7 +790,8 @@ module.exports = function(grunt) {
         'clean:dist',
         'clean:build',
         'build:all',
-        'copy:dist'
+        'copy:dist',
+        'concat:types'
     ]);
 
     grunt.registerTask('test:server', ['mochaTest:server']);
@@ -792,10 +810,6 @@ module.exports = function(grunt) {
     grunt.registerTask('install', ['bowerInstall', 'build:all']);
     grunt.registerTask('default', ['install', 'build', 'watch']);
 
-    /*
-        List of Available Platforms on Sauce Labs:
-        https://saucelabs.com/platforms
-    */
     var e2eBrowsers = {
         'chrome': {
             'browserName': 'chrome',
@@ -832,15 +846,11 @@ module.exports = function(grunt) {
         },
         'phantomjs': {
             'browserName': 'phantomjs',
-            'name': 'PhantomJS'
-        },
-        'phantomjs-2.x': {
-            'browserName': 'phantomjs',
-            // Set the path to the PhantomJS 2.x binary.
+            // Set the path to the PhantomJS binary.
             // Can be in different places depending upon the current environment.
             // For example, if phantomjs is on the current user's PATH (with the correct version).
             'phantomjs.binary.path': phantomjs.path,
-            'name': 'PhantomJS 2.x'
+            'name': 'PhantomJS'
         }
     };
 
@@ -905,16 +915,23 @@ module.exports = function(grunt) {
     });
 
     var seleniumInstalled = (function() {
-
         return grunt.file.exists(__dirname + '/node_modules/selenium-standalone/.selenium/selenium-server');
-
     }());
 
     var seleniumChildProcess;
 
+    var seleniumConfig = {
+        drivers: {
+            chrome: {
+                version: 2.29,
+                baseURL: 'https://chromedriver.storage.googleapis.com'
+            }
+        }
+    };
+
     function startSelenium(cb) {
         grunt.log.writeln('Starting selenium..');
-        selenium.start(function(error, child) {
+        selenium.start(seleniumConfig, function(error, child) {
             if (error) return cb(error);
             seleniumChildProcess = child;
             cb();
@@ -930,8 +947,9 @@ module.exports = function(grunt) {
         if (seleniumInstalled) return cb();
         grunt.log.writeln('Installing selenium..');
         seleniumInstalled = true;
-        selenium.install(cb);
+        selenium.install(seleniumConfig, cb);
     }
+
     process.on('exit', function() {
         // Kill selenium server process if it is running.
         if (seleniumChildProcess) seleniumChildProcess.kill();

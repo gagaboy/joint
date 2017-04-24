@@ -39,6 +39,14 @@ QUnit.module('rect', function() {
 
         });
 
+        QUnit.module('bottomLine()', function() {
+
+            QUnit.test('returns the bottom line', function(assert) {
+
+                assert.ok(g.rect(10, 20, 30, 40).bottomLine().equals(g.line('10 60', '40 60')));
+            });
+        });
+
         QUnit.module('bottomMiddle()', function() {
 
             QUnit.test('returns the bottom-middle point', function(assert) {
@@ -101,12 +109,36 @@ QUnit.module('rect', function() {
             });
         });
 
+        QUnit.module('inflate()', function() {
+
+            QUnit.test('inflate rect', function(assert) {
+
+                assert.ok(g.rect(0, 0, 1, 1).inflate(1).equals(g.rect(-1, -1, 3, 3)));
+                assert.ok(g.rect(0, 0, 1, 1).inflate(2).equals(g.rect(-2, -2, 5, 5)));
+                assert.ok(g.rect(5, 5, 10, 10).inflate(5).equals(g.rect(0, 0, 20, 20)));
+                assert.ok(g.rect(0, 0, 1, 1).inflate(1, 2).equals(g.rect(-1, -2, 3, 5)));
+                assert.ok(g.rect(5, 5, 10, 10).inflate(5, 3).equals(g.rect(0, 2, 20, 16)));
+                assert.ok(g.rect(0, 0, 1, 1).inflate(1, 0).equals(g.rect(-1, 0, 3, 1)));
+                assert.ok(g.rect(0, 0, 1, 1).inflate().equals(g.rect(0, 0, 1, 1)));
+                assert.ok(g.rect(0, 0, 1, 1).inflate(0).equals(g.rect(0, 0, 1, 1).inflate()));
+                assert.ok(g.rect(0, 0, 1, 1).inflate(0, 1).equals(g.rect(0, -1, 1, 3)));
+            });
+        });
+
         QUnit.module('intersect(rect)', function() {
 
         });
 
         QUnit.module('intersectionWithLineFromCenterToPoint(point, angle)', function() {
 
+        });
+
+        QUnit.module('leftLine()', function() {
+
+            QUnit.test('returns the left line', function(assert) {
+
+                assert.ok(g.rect(10, 20, 30, 40).leftLine().equals(g.line('10 20', '10 60')));
+            });
         });
 
         QUnit.module('leftMiddle()', function() {
@@ -133,6 +165,14 @@ QUnit.module('rect', function() {
 
         });
 
+        QUnit.module('rightLine()', function() {
+
+            QUnit.test('returns the right line', function(assert) {
+
+                assert.ok(g.rect(10, 20, 30, 40).rightLine().equals(g.line('40 20', '40 60')));
+            });
+        });
+
         QUnit.module('rightMiddle()', function() {
 
             QUnit.test('returns the right-middle point', function(assert) {
@@ -142,6 +182,47 @@ QUnit.module('rect', function() {
         });
 
         QUnit.module('round(precision)', function() {
+
+            QUnit.test('no precision', function(assert) {
+                assert.deepEqual(
+                    g.Rect(1, 2, 3, 4).round().toJSON(),
+                    g.Rect(1, 2, 3, 4).toJSON()
+                );
+                assert.deepEqual(
+                    g.Rect(1.1, 2.2, 3.3, 4.4).round().toJSON(),
+                    g.Rect(1, 2, 3, 4).toJSON()
+                );
+            });
+
+            QUnit.test('with precision', function(assert) {
+                assert.deepEqual(
+                    g.Rect(1, 2, 3, 4).round(1).toJSON(),
+                    g.Rect(1, 2, 3,4).toJSON()
+                );
+                assert.deepEqual(
+                    g.Rect(1.11, 2.22, 3.33, 6.66).round(1).toJSON(),
+                    g.Rect(1.1, 2.2, 3.3, 6.7).toJSON()
+                );
+                assert.deepEqual(
+                    g.Rect(1, 2, 3, 4).round(2).toJSON(),
+                    g.Rect(1, 2, 3, 4).toJSON()
+                );
+                assert.deepEqual(
+                    g.Rect(1.111, 2.222, 3.333, 6.666).round(2).toJSON(),
+                    g.Rect(1.11, 2.22, 3.33, 6.67).toJSON()
+                );
+            });
+
+            QUnit.test('with negative precision', function(assert) {
+                assert.deepEqual(
+                    g.Rect(11, 22, 33, 66).round(-1).toJSON(),
+                    g.Rect(10, 20, 30, 70).toJSON()
+                );
+                assert.deepEqual(
+                    g.Rect(11.1,22.2,33.3,66.6).round(-1).toJSON(),
+                    g.Rect(10, 20, 30, 70).toJSON()
+                );
+            });
 
         });
 
@@ -160,6 +241,14 @@ QUnit.module('rect', function() {
 
         QUnit.module('snapToGrid(gx, gy)', function() {
 
+        });
+
+        QUnit.module('topLine()', function() {
+
+            QUnit.test('returns the top line', function(assert) {
+
+                assert.ok(g.rect(10, 20, 30, 40).topLine().equals(g.line('10 20', '40 20')));
+            });
         });
 
         QUnit.module('topMiddle()', function() {

@@ -66,7 +66,7 @@ QUnit.module('util', function(hooks) {
         // For example, some browsers might have a different default font size/family.
         var styles = {
             'font-size': '12px',
-            'font-family': 'Courer New'
+            'font-family': 'Courier New'
         };
 
         var text = 'Lorem ipsum dolor sit amet, consectetur adipiscing elit.';
@@ -80,7 +80,7 @@ QUnit.module('util', function(hooks) {
 
         ok(_.contains(joint.util.breakText(text, { width: 15 }, styles), '\n'), 'A text was broken when width B specified.');
 
-        var brokenText = joint.util.breakText(text, { width: 100, height: 50 }, styles);
+        var brokenText = joint.util.breakText(text, { width: 100, height: 40 }, styles);
 
         ok(_.contains(brokenText, 'Lorem') && !_.contains(brokenText, 'elit.'), 'A text was trimmed when width & height specified.');
 
@@ -91,6 +91,19 @@ QUnit.module('util', function(hooks) {
         throws(function() {
             joint.util.breakText(text, { width: 100, height: 50 }, _.extend({}, styles, { 'font-size': '18px' }), { svgDocument: 'not-svg' });
         }, /appendChild|undefined/, 'A custom svgDocument provided was recognized.');
+    });
+
+    QUnit.test('util.parseCssNumeric', function(assert) {
+
+        assert.equal(joint.util.parseCssNumeric('auto'), null);
+
+        assert.deepEqual(joint.util.parseCssNumeric('1.1'), { value: 1.1 });
+        assert.deepEqual(joint.util.parseCssNumeric('1.1em', ['em']), { value: 1.1, unit: 'em' });
+        assert.equal(joint.util.parseCssNumeric('10px', ['em']), null, 'invalid unit');
+
+        assert.deepEqual(joint.util.parseCssNumeric('10px', ['em', 'px']), { value: 10, unit: 'px' });
+        assert.deepEqual(joint.util.parseCssNumeric('1.1em', ['em', 'px']), { value: 1.1, unit: 'em' });
+        assert.deepEqual(joint.util.parseCssNumeric(10, ['em', 'px']), { value: 10 });
     });
 
     QUnit.test('util.getByPath()', function() {
@@ -105,7 +118,8 @@ QUnit.module('util', function(hooks) {
             g: [],
             h: [null, 4, {
                 i: { j: 6 }
-            }]
+            }],
+            'a/b/c': { d: 'abcd' }
         };
 
         deepEqual(joint.util.getByPath(obj, 'none'), undefined, 'non-existing property is undefined');
@@ -122,6 +136,8 @@ QUnit.module('util', function(hooks) {
         deepEqual(joint.util.getByPath(obj, 'h/1/none'), undefined, 'non-existing property of nth item of an array is undefined');
         equal(joint.util.getByPath(obj, 'h/2/i/j'), 6, 'nested property of nth item of an array is number');
         equal(joint.util.getByPath(obj, 'h.2.i.j', '.'), 6, 'same but this time with a custom delimiter');
+        equal(joint.util.getByPath(obj, ['h', '2', 'i', 'j']), 6, 'path as array');
+        equal(joint.util.getByPath(obj, ['a/b/c', 'd']), 'abcd', 'path as array, separator in name');
     });
 
     QUnit.test('util.setByPath()', function() {
@@ -133,29 +149,79 @@ QUnit.module('util', function(hooks) {
         deepEqual(joint.util.setByPath({}, 'first/second/third', 8), { first: { second: { third: 8 } } }, 'populate an empty object with nested objects');
         deepEqual(joint.util.setByPath({}, 'first.second.third', 9, '.'), { first: { second: { third: 9 } } }, 'same but this time with a custom delimiter');
         deepEqual(joint.util.setByPath([null], '0/property', 10), [{ property: 10 }], 'replace null item with an object');
+        deepEqual(joint.util.setByPath({ array: [] }, 'array/1', 'index'), { array: [undefined, 'index'] }, 'define array');
+        deepEqual(joint.util.setByPath({ object: {} }, 'object/1', 'property'), { object: { '1': 'property' } }, 'define property');
     });
 
-    QUnit.test('util.unsetByPath()', function() {
+    QUnit.module('util.unsetByPath', function(hooks) {
 
-        var obj = {
-            a: 1,
-            b: {
-                c: 2,
-                d: 3
-            }
-        };
+        QUnit.test('path defined as string', function() {
 
-        joint.util.unsetByPath(obj, 'b/c', '/');
+            var obj = {
+                a: 1,
+                b: {
+                    c: 2,
+                    d: 3
+                }
+            };
 
-        deepEqual(obj, { a: 1, b: { d: 3 } }, 'A nested attribute was removed.');
+            joint.util.unsetByPath(obj, 'b/c', '/');
+            deepEqual(obj, { a: 1, b: { d: 3 } }, 'A nested attribute was removed.');
 
-        joint.util.unsetByPath(obj, 'b');
+            joint.util.unsetByPath(obj, 'b');
+            deepEqual(obj, { a: 1 }, 'A primitive attribute was removed.');
 
-        deepEqual(obj, { a: 1 }, 'A primitive attribute was removed.');
+            joint.util.unsetByPath(obj, 'c/d');
+            deepEqual(obj, { a: 1 }, 'Attempt to delete non-existing attribute doesn\'t affect object.');
 
-        joint.util.unsetByPath(obj, 'c/d');
+        });
 
-        deepEqual(obj, { a: 1 }, 'Attempt to delete non-existing attribute doesn\'t affect object.');
+        QUnit.test('path defined as array - remove from objects and arrays', function(assert) {
+
+            var obj = {
+                object: { 1: 'property', 2: 'property2', 3: 'property3' },
+                array: ['a', 'b', 'c'],
+                objectArray: [{ a: 'a_value', b: 'b_value' }, { c: 'c_value', d: 'd_value' }]
+            };
+
+            joint.util.unsetByPath(obj, ['object', 1]);
+            assert.deepEqual(obj.object, { 2: 'property2', 3: 'property3' });
+
+            joint.util.unsetByPath(obj, ['object', 2]);
+            assert.deepEqual(obj.object, { 3: 'property3' });
+
+            joint.util.unsetByPath(obj, ['array', 1]);
+            assert.deepEqual(obj.array, ['a', undefined, 'c']);
+
+            joint.util.unsetByPath(obj, ['array', 2]);
+            assert.deepEqual(obj.array, ['a', undefined, undefined]);
+
+            joint.util.unsetByPath(obj, ['objectArray', 1, 'c']);
+            assert.deepEqual(obj.objectArray, [{ a: 'a_value', b: 'b_value' }, { d: 'd_value' }]);
+
+            joint.util.unsetByPath(obj, ['objectArray', '1', 'd']);
+            assert.deepEqual(obj.objectArray, [{ a: 'a_value', b: 'b_value' }, {}]);
+        });
+
+        QUnit.test('path defined as array', function() {
+
+            var obj = {
+                a: 1,
+                b: {
+                    c: 2,
+                    d: 3
+                }
+            };
+
+            joint.util.unsetByPath(obj, ['b', 'c'], '/');
+            deepEqual(obj, { a: 1, b: { d: 3 } }, 'A nested attribute was removed.');
+
+            joint.util.unsetByPath(obj, ['b']);
+            deepEqual(obj, { a: 1 }, 'A primitive attribute was removed.');
+
+            joint.util.unsetByPath(obj, ['c', 'd']);
+            deepEqual(obj, { a: 1 }, 'Attempt to delete non-existing attribute doesn\'t affect object.');
+        });
     });
 
     QUnit.test('util.normalizeSides()', function(assert) {
@@ -441,4 +507,177 @@ QUnit.module('util', function(hooks) {
             delete joint.util.wrappers[wrapper];
         });
     });
+
+    QUnit.module('wrappers', function(hooks) {
+
+        QUnit.module('cells', function(hooks) {
+
+            var expected;
+
+            hooks.beforeEach(function() {
+
+                expected = {
+                    cells: [
+                        new joint.dia.Cell,
+                        new joint.dia.Cell,
+                        new joint.dia.Cell
+                    ],
+                    opt: {
+                        someOption: 'testing',
+                        anotherOption: 50
+                    }
+                };
+            });
+
+            QUnit.test('fn([cell, cell, cell], opt)', function(assert) {
+
+                var fn = joint.util.wrappers.cells(function(cells, opt) {
+                    assert.ok(_.isArray(cells), 'cells is an array');
+                    assert.ok(_.isEqual(cells, expected.cells), 'cells is as expected');
+                    assert.ok(_.isObject(opt), 'opt is an object');
+                    assert.ok(_.isEqual(opt, expected.opt), 'opt is as expected');
+                });
+
+                fn(expected.cells, expected.opt);
+            });
+
+            QUnit.test('fn([cell, cell, cell])', function(assert) {
+
+                var fn = joint.util.wrappers.cells(function(cells, opt) {
+                    assert.ok(_.isArray(cells), 'cells is an array');
+                    assert.ok(_.isEqual(cells, expected.cells), 'cells is as expected');
+                    assert.ok(_.isObject(opt), 'opt is an object');
+                    assert.ok(_.isEqual(opt, {}), 'opt is an empty object');
+                });
+
+                fn(expected.cells);
+            });
+
+            QUnit.test('fn(cell, cell, cell)', function(assert) {
+
+                var fn = joint.util.wrappers.cells(function(cells, opt) {
+                    assert.ok(_.isArray(cells), 'cells is an array');
+                    assert.ok(_.isEqual(cells, expected.cells), 'cells is as expected');
+                    assert.ok(_.isObject(opt), 'opt is an object');
+                    assert.ok(_.isEqual(opt, {}), 'opt is an empty object');
+                });
+
+                fn.apply(undefined, expected.cells);
+            });
+
+            QUnit.test('fn(cell, cell, cell, opt)', function(assert) {
+
+                var fn = joint.util.wrappers.cells(function(cells, opt) {
+                    assert.ok(_.isArray(cells), 'cells is an array');
+                    assert.ok(_.isEqual(cells, expected.cells), 'cells is as expected');
+                    assert.ok(_.isObject(opt), 'opt is an object');
+                    assert.ok(_.isEqual(opt, expected.opt), 'opt is as expected');
+                });
+
+                fn.apply(undefined, [].concat(expected.cells, [expected.opt]));
+            });
+
+            QUnit.test('fn(cell)', function(assert) {
+
+                var cell = _.first(expected.cells);
+
+                var fn = joint.util.wrappers.cells(function(cells, opt) {
+                    assert.ok(_.isArray(cells), 'cells is an array');
+                    assert.ok(_.isEqual(cells, [cell]), 'cells is as expected');
+                    assert.ok(_.isObject(opt), 'opt is an object');
+                    assert.ok(_.isEqual(opt, {}), 'opt is an empty object');
+                });
+
+                fn(cell);
+            });
+        });
+    });
+
+    QUnit.module('getElementBBox', function(hooks) {
+
+        QUnit.module('html', function(hooks) {
+
+            var $htmlElement;
+            hooks.beforeEach(function() {
+                $htmlElement = $('<div/>').css({
+                    position: 'absolute',
+                    top: 10,
+                    left: 20,
+                    width: 50,
+                    height: 60
+                });
+
+                $htmlElement.appendTo(document.body);
+            });
+
+            hooks.afterEach(function() {
+                $htmlElement.remove();
+            });
+
+            QUnit.test('html element', function(assert) {
+
+                var bBox = joint.util.getElementBBox($htmlElement[0]);
+
+                assert.equal(bBox.x, 20);
+                assert.equal(bBox.y, 10);
+                assert.equal(bBox.width, 50);
+                assert.equal(bBox.height, 60);
+            });
+
+            QUnit.test('possible input argument types', function (assert) {
+
+                assert.ok(joint.util.getElementBBox('html'));
+                assert.ok(joint.util.getElementBBox($htmlElement));
+                assert.ok(joint.util.getElementBBox($htmlElement[0]));
+
+                assert.throws(function () {
+                    joint.util.getElementBBox('xxx');
+                });
+
+                assert.throws(function () {
+                    joint.util.getElementBBox();
+                });
+            })
+        });
+
+        QUnit.module('svg', function(hooks) {
+
+            hooks.beforeEach(function () {
+                this.svgDoc = V(V.createSvgDocument()).attr('style', 'position:absolute;top:50px;left:60px');
+                V($('body')[0]).append(this.svgDoc);
+            });
+
+            hooks.afterEach(function () {
+                this.svgDoc.remove();
+            });
+
+            QUnit.test('simple element', function(assert) {
+
+                var svgElement = V('<rect width="70" height="80"/>');
+                this.svgDoc.append(svgElement);
+
+                var bBox = joint.util.getElementBBox(svgElement.node);
+
+                assert.equal(bBox.x, 60);
+                assert.equal(bBox.y, 50);
+                assert.equal(bBox.width, 70);
+                assert.equal(bBox.height, 80);
+            });
+
+            QUnit.test('with position, with stroke', function(assert) {
+
+                // firefox measures differently - includes the stroke as well.
+                // joint.util.getElementBBox should return consistent values across all browsers.
+                var svgElement = V('<rect width="70" height="80" x="50" y="50" stroke-width="10" stroke="red"/>');
+                this.svgDoc.append(svgElement);
+
+                var bBox = joint.util.getElementBBox(svgElement.node);
+
+                assert.equal(bBox.x, 60 + 50);
+                assert.equal(bBox.y, 50 + 50);
+                assert.equal(bBox.width, 70);
+                assert.equal(bBox.height, 80);
+            });
+        });
+    })
 });

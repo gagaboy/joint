@@ -1,4 +1,4 @@
-/*! JointJS v1.0.1 (2016-09-20) - JavaScript diagramming library
+/*! JointJS v1.1.0 (2017-03-31) - JavaScript diagramming library
 
 
 This Source Code Form is subject to the terms of the Mozilla Public
@@ -27,8 +27,8 @@ file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
 }(this, function() {
 
+
 //      Geometry library.
-//      (c) 2011-2015 client IO
 
 var g = (function() {
 
@@ -47,6 +47,7 @@ var g = (function() {
     var floor = math.floor;
     var PI = math.PI;
     var random = math.random;
+    var pow = math.pow;
 
     g.bezier = {
 
@@ -252,6 +253,26 @@ var g = (function() {
             return ((x0 - x) * (x0 - x)) / (a * a ) + ((y0 - y) * (y0 - y)) / (b * b);
         },
 
+        // inflate by dx and dy
+        // @param dx {delta_x} representing additional size to x
+        // @param dy {delta_y} representing additional size to y -
+        // dy param is not required -> in that case y is sized by dx
+        inflate: function(dx, dy) {
+            if (dx === undefined) {
+                dx = 0;
+            }
+
+            if (dy === undefined) {
+                dy = dx;
+            }
+
+            this.a += 2 * dx;
+            this.b += 2 * dy;
+
+            return this;
+        },
+
+
         /**
          * @param {g.Point} p
          * @returns {boolean}
@@ -383,33 +404,69 @@ var g = (function() {
             return Line(this);
         },
 
-        // @return {point} Point where I'm intersecting l.
-        // @see Squeak Smalltalk, LineSegment>>intersectionWith:
-        intersection: function(l) {
-            var pt1Dir = Point(this.end.x - this.start.x, this.end.y - this.start.y);
-            var pt2Dir = Point(l.end.x - l.start.x, l.end.y - l.start.y);
-            var det = (pt1Dir.x * pt2Dir.y) - (pt1Dir.y * pt2Dir.x);
-            var deltaPt = Point(l.start.x - this.start.x, l.start.y - this.start.y);
-            var alpha = (deltaPt.x * pt2Dir.y) - (deltaPt.y * pt2Dir.x);
-            var beta = (deltaPt.x * pt1Dir.y) - (deltaPt.y * pt1Dir.x);
+        equals: function(l) {
 
-            if (det === 0 ||
-                alpha * det < 0 ||
-                beta * det < 0) {
-                // No intersection found.
-                return null;
-            }
-            if (det > 0) {
-                if (alpha > det || beta > det) {
+            return this.start.x === l.start.x &&
+                    this.start.y === l.start.y &&
+                    this.end.x === l.end.x &&
+                    this.end.y === l.end.y;
+        },
+
+        // @return {point} Point where I'm intersecting a line.
+        // @return [point] Points where I'm intersecting a rectangle.
+        // @see Squeak Smalltalk, LineSegment>>intersectionWith:
+        intersect: function(l) {
+
+            if (l instanceof Line) {
+                // Passed in parameter is a line.
+
+                var pt1Dir = Point(this.end.x - this.start.x, this.end.y - this.start.y);
+                var pt2Dir = Point(l.end.x - l.start.x, l.end.y - l.start.y);
+                var det = (pt1Dir.x * pt2Dir.y) - (pt1Dir.y * pt2Dir.x);
+                var deltaPt = Point(l.start.x - this.start.x, l.start.y - this.start.y);
+                var alpha = (deltaPt.x * pt2Dir.y) - (deltaPt.y * pt2Dir.x);
+                var beta = (deltaPt.x * pt1Dir.y) - (deltaPt.y * pt1Dir.x);
+
+                if (det === 0 ||
+                    alpha * det < 0 ||
+                    beta * det < 0) {
+                    // No intersection found.
                     return null;
                 }
-            } else {
-                if (alpha < det || beta < det) {
-                    return null;
+                if (det > 0) {
+                    if (alpha > det || beta > det) {
+                        return null;
+                    }
+                } else {
+                    if (alpha < det || beta < det) {
+                        return null;
+                    }
                 }
+                return Point(this.start.x + (alpha * pt1Dir.x / det),
+                             this.start.y + (alpha * pt1Dir.y / det));
+
+            } else if (l instanceof Rect) {
+                // Passed in parameter is a rectangle.
+
+                var r = l;
+                var rectLines = [ r.topLine(), r.rightLine(), r.bottomLine(), r.leftLine() ];
+                var points = [];
+                var dedupeArr = [];
+                var pt, i;
+
+                for (i = 0; i < rectLines.length; i ++) {
+                    pt = this.intersect(rectLines[i]);
+                    if (pt !== null && dedupeArr.indexOf(pt.toString()) < 0) {
+                        points.push(pt);
+                        dedupeArr.push(pt.toString());
+                    }
+                }
+
+                return points.length > 0 ? points : null;
             }
-            return Point(this.start.x + (alpha * pt1Dir.x / det),
-                         this.start.y + (alpha * pt1Dir.y / det));
+
+            // Passed in parameter is neither a Line nor a Rectangle.
+            return null;
         },
 
         // @return {double} length of the line
@@ -452,6 +509,9 @@ var g = (function() {
             return this.start.toString() + ' ' + this.end.toString();
         }
     };
+
+    // For backwards compatibility:
+    g.Line.prototype.intersection = g.Line.prototype.intersect;
 
     /*
         Point is the most basic object consisting of x/y coordinate.
@@ -545,9 +605,14 @@ var g = (function() {
             return Point(this);
         },
 
-        difference: function(p) {
+        difference: function(dx, dy) {
 
-            return Point(this.x - p.x, this.y - p.y);
+            if ((Object(dx) === dx)) {
+                dy = dx.y;
+                dx = dx.x;
+            }
+
+            return Point(this.x - (dx || 0), this.y - (dy || 0));
         },
 
         // Returns distance between me and point `p`.
@@ -590,6 +655,11 @@ var g = (function() {
         // Offset me by the specified amount.
         offset: function(dx, dy) {
 
+            if ((Object(dx) === dx)) {
+                dy = dx.y;
+                dx = dx.x;
+            }
+
             this.x += dx || 0;
             this.y += dy || 0;
             return this;
@@ -616,8 +686,9 @@ var g = (function() {
 
         round: function(precision) {
 
-            this.x = precision ? this.x.toFixed(precision) : round(this.x);
-            this.y = precision ? this.y.toFixed(precision) : round(this.y);
+            var f = pow(10, precision || 0);
+            this.x = round(this.x * f) / f;
+            this.y = round(this.y * f) / f;
             return this;
         },
 
@@ -730,6 +801,11 @@ var g = (function() {
         bottomLeft: function() {
 
             return Point(this.x, this.y + this.height);
+        },
+
+        bottomLine: function() {
+
+            return Line(this.bottomLeft(), this.corner());
         },
 
         bottomMiddle: function() {
@@ -845,6 +921,11 @@ var g = (function() {
             return result;
         },
 
+        leftLine: function() {
+
+            return Line(this.origin(), this.bottomLeft());
+        },
+
         leftMiddle: function() {
 
             return Point(this.x , this.y + this.height / 2);
@@ -858,6 +939,27 @@ var g = (function() {
             this.y += r.y || 0;
             this.width += r.width || 0;
             this.height += r.height || 0;
+            return this;
+        },
+
+        // inflate by dx and dy, recompute origin [x, y]
+        // @param dx {delta_x} representing additional size to x
+        // @param dy {delta_y} representing additional size to y -
+        // dy param is not required -> in that case y is sized by dx
+        inflate: function(dx, dy) {
+            if (dx === undefined) {
+                dx = 0;
+            }
+
+            if (dy === undefined) {
+                dy = dx;
+            }
+
+            this.x -= dx;
+            this.y -= dy;
+            this.width += 2 * dx;
+            this.height += 2 * dy;
+
             return this;
         },
 
@@ -908,6 +1010,11 @@ var g = (function() {
             return point.adhereToRect(this);
         },
 
+        rightLine: function() {
+
+            return Line(this.topRight(), this.corner());
+        },
+
         rightMiddle: function() {
 
             return Point(this.x + this.width, this.y + this.height / 2);
@@ -915,10 +1022,11 @@ var g = (function() {
 
         round: function(precision) {
 
-            this.x = precision ? this.x.toFixed(precision) : round(this.x);
-            this.y = precision ? this.y.toFixed(precision) : round(this.y);
-            this.width = precision ? this.width.toFixed(precision) : round(this.width);
-            this.height = precision ? this.height.toFixed(precision) : round(this.height);
+            var f = pow(10, precision || 0);
+            this.x = round(this.x * f) / f;
+            this.y = round(this.y * f) / f;
+            this.width = round(this.width * f) / f;
+            this.height = round(this.height * f) / f;
             return this;
         },
 
@@ -931,6 +1039,65 @@ var g = (function() {
             this.width *= sx;
             this.height *= sy;
             return this;
+        },
+
+        maxRectScaleToFit: function(rect, origin) {
+
+            rect = g.Rect(rect);
+            origin || (origin = rect.center());
+
+            var sx1, sx2, sx3, sx4, sy1, sy2, sy3, sy4;
+            var ox = origin.x;
+            var oy = origin.y;
+
+            // Here we find the maximal possible scale for all corner points (for x and y axis) of the rectangle,
+            // so when the scale is applied the point is still inside the rectangle.
+
+            sx1 = sx2 = sx3 = sx4 = sy1 = sy2 = sy3 = sy4 = Infinity;
+
+            // Top Left
+            var p1 = rect.origin();
+            if (p1.x < ox) {
+                sx1 = (this.x - ox) / (p1.x - ox);
+            }
+            if (p1.y < oy) {
+                sy1 = (this.y - oy) / (p1.y - oy);
+            }
+            // Bottom Right
+            var p2 = rect.corner();
+            if (p2.x > ox) {
+                sx2 = (this.x + this.width - ox) / (p2.x - ox);
+            }
+            if (p2.y > oy) {
+                sy2 = (this.y + this.height - oy) / (p2.y - oy);
+            }
+            // Top Right
+            var p3 = rect.topRight();
+            if (p3.x > ox) {
+                sx3 = (this.x + this.width - ox) / (p3.x - ox);
+            }
+            if (p3.y < oy) {
+                sy3 = (this.y - oy) / (p3.y - oy);
+            }
+            // Bottom Left
+            var p4 = rect.bottomLeft();
+            if (p4.x < ox) {
+                sx4 = (this.x - ox) / (p4.x - ox);
+            }
+            if (p4.y > oy) {
+                sy4 = (this.y + this.height - oy) / (p4.y - oy);
+            }
+
+            return {
+                sx: Math.min(sx1, sx2, sx3, sx4),
+                sy: Math.min(sy1, sy2, sy3, sy4)
+            };
+        },
+
+        maxRectUniformScaleToFit: function(rect, origin) {
+
+            var scale = this.maxRectScaleToFit(rect, origin);
+            return Math.min(scale.sx, scale.sy);
         },
 
         // @return {string} (left|right|top|bottom) side which is nearest to point
@@ -969,6 +1136,11 @@ var g = (function() {
             this.width = corner.x - origin.x;
             this.height = corner.y - origin.y;
             return this;
+        },
+
+        topLine: function() {
+
+            return Line(this.origin(), this.topRight());
         },
 
         topMiddle: function() {

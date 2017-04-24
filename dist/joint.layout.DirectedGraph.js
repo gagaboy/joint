@@ -1,4 +1,4 @@
-/*! JointJS v1.0.1 (2016-09-20) - JavaScript diagramming library
+/*! JointJS v1.1.0 (2017-03-31) - JavaScript diagramming library
 
 
 This Source Code Form is subject to the terms of the Mozilla Public
@@ -25,7 +25,8 @@ joint.layout.DirectedGraph = {
         if (graphOrCells instanceof joint.dia.Graph) {
             graph = graphOrCells;
         } else {
-            graph = (new joint.dia.Graph()).resetCells(graphOrCells);
+            // Reset cells in dry mode so the graph reference is not stored on the cells.
+            graph = (new joint.dia.Graph()).resetCells(graphOrCells, { dry: true });
         }
 
         // This is not needed anymore.

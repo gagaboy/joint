@@ -3,18 +3,17 @@
 QUnit.module('vectorizer', function(hooks) {
 
     var $fixture = $('#qunit-fixture');
-
-    var svgContainer = document.getElementById('svg-container');
-    var svgPath = document.getElementById('svg-path');
-    var svgGroup = document.getElementById('svg-group');
-    var svgCircle = document.getElementById('svg-circle');
-    var svgEllipse = document.getElementById('svg-ellipse');
-    var svgPolygon = document.getElementById('svg-polygon');
-    var svgText = document.getElementById('svg-text');
-    var svgRectangle = document.getElementById('svg-rectangle');
-    var svgGroup1 = document.getElementById('svg-group-1');
-    var svgGroup2 = document.getElementById('svg-group-2');
-    var svgGroup3 = document.getElementById('svg-group-3');
+    var svgContainer;
+    var svgPath;
+    var svgGroup;
+    var svgCircle;
+    var svgEllipse;
+    var svgPolygon;
+    var svgText;
+    var svgRectangle;
+    var svgGroup1;
+    var svgGroup2;
+    var svgGroup3;
 
     var childrenTagNames = function(vel) {
         var tagNames = [];
@@ -24,15 +23,42 @@ QUnit.module('vectorizer', function(hooks) {
         return tagNames;
     };
 
-    hooks.afterEach = function() {
+    hooks.beforeEach(function() {
 
-        $fixture.empty();
-    };
+        var svgContent = '<path id="svg-path" d="M10 10"/>' +
+                '<!-- comment -->' +
+                '<g id="svg-group">' +
+                    '<ellipse id="svg-ellipse" x="10" y="10" rx="30" ry="30"/>' +
+                    '<circle id="svg-circle" cx="10" cy="10" r="2" fill="red"/>' +
+                '</g>' +
+                '<polygon id="svg-polygon" points="200,10 250,190 160,210"/>' +
+                '<text id="svg-text" x="0" y="15" fill="red">Test</text>' +
+                '<rect id="svg-rectangle" x="100" y="100" width="50" height="100"/>' +
+                '<g id="svg-group-1" class="group-1">' +
+                    '<g id="svg-group-2" class="group-2">' +
+                        '<g id="svg-group-3" class="group3">' +
+                        '</g>' +
+                    '</g>' +
+                '</g>';
+
+        $fixture.append(V('svg', { id: 'svg-container' }, V(svgContent)).node);
+
+        svgContainer = document.getElementById('svg-container');
+        svgPath = document.getElementById('svg-path');
+        svgGroup = document.getElementById('svg-group');
+        svgCircle = document.getElementById('svg-circle');
+        svgEllipse = document.getElementById('svg-ellipse');
+        svgPolygon = document.getElementById('svg-polygon');
+        svgText = document.getElementById('svg-text');
+        svgRectangle = document.getElementById('svg-rectangle');
+        svgGroup1 = document.getElementById('svg-group-1');
+        svgGroup2 = document.getElementById('svg-group-2');
+        svgGroup3 = document.getElementById('svg-group-3');
+    });
 
     function serializeNode(node) {
 
-        var str = (new XMLSerializer()).serializeToString(node);
-        return str;
+        return (new XMLSerializer()).serializeToString(node);
     }
 
     QUnit.test('constuctor', function(assert) {
@@ -69,6 +95,16 @@ QUnit.module('vectorizer', function(hooks) {
         }
 
         assert.ok(typeof error === 'undefined', 'Should not throw an error when given valid markup.');
+    });
+
+    QUnit.test('V.ensureId()', function(assert) {
+        var node = document.createElementNS('http://www.w3.org/2000/svg', 'g');
+        assert.notOk(node.id);
+        var id = V.ensureId(node);
+        assert.ok(id);
+        assert.equal(id, node.id);
+        assert.equal(id, V.ensureId(node));
+        assert.equal(id, node.id);
     });
 
     QUnit.test('index()', function(assert) {
@@ -131,6 +167,13 @@ QUnit.module('vectorizer', function(hooks) {
         assert.equal(V(t.find('tspan')[1]).attr('annotations'), '0', 'annotation indices added as an attribute');
         assert.equal(V(t.find('tspan')[2]).attr('annotations'), '0,1', 'annotation indices added as an attribute');
         assert.equal(V(t.find('tspan')[3]).attr('annotations'), '1', 'annotation indices added as an attribute');
+
+        t.text('');
+        assert.equal(t.attr('display'), 'none');
+        t.text('text');
+        assert.equal(t.attr('display'), null);
+
+        svg.remove();
     });
 
     QUnit.test('annotateString', function(assert) {
@@ -227,8 +270,6 @@ QUnit.module('vectorizer', function(hooks) {
         group.attr('transform', 'rotate(90)');
         t = V.transformPoint(p, group.node.getCTM());
         assert.deepEqual({ x: t.x, y: t.y }, { x: -2, y: 1 }, 'transform with rotate transformation returns correct point.');
-
-        group.remove();
     });
 
     QUnit.test('native getTransformToElement vs VElement getTransformToElement - translate', function(assert) {
@@ -260,6 +301,9 @@ QUnit.module('vectorizer', function(hooks) {
             f: transformPoly.f
         };
         assert.deepEqual(matrix, transformNativeResult);
+
+        group.remove();
+        rect.remove();
     });
 
     QUnit.test('native getTransformToElement vs VElement getTransformToElement - rotate', function(assert) {
@@ -295,6 +339,9 @@ QUnit.module('vectorizer', function(hooks) {
             f: normalizeFloat(transformPoly.f)
         };
         assert.deepEqual(matrix, transformNativeResult);
+
+        group.remove();
+        rect.remove();
     });
 
     QUnit.test('findParentByClass', function(assert) {
@@ -323,14 +370,24 @@ QUnit.module('vectorizer', function(hooks) {
         );
     });
 
+    QUnit.test('contains()', function(assert) {
+
+        assert.ok(V(svgContainer).contains(svgGroup1));
+        assert.ok(V(svgGroup1).contains(svgGroup3));
+        assert.ok(V(svgGroup1).contains(svgGroup2));
+        assert.notOk(V(svgGroup3).contains(svgGroup1));
+        assert.notOk(V(svgGroup2).contains(svgGroup1));
+        assert.notOk(V(svgGroup1).contains(svgGroup1));
+        assert.notOk(V(svgGroup1).contains(document));
+    });
+
     QUnit.module('transform()', function(hooks) {
 
         var vel;
 
         hooks.beforeEach(function() {
 
-            vel = V('rect');
-            V(svgContainer).append(vel);
+            vel = V('rect').appendTo(svgContainer);
         });
 
         hooks.afterEach(function() {
@@ -584,6 +641,31 @@ QUnit.module('vectorizer', function(hooks) {
         });
     });
 
+    QUnit.module('appendTo()', function(hooks) {
+
+        var groupNode;
+
+        hooks.beforeEach(function() {
+            groupNode = V(svgGroup).clone().empty().node;
+        });
+
+        QUnit.test('append vnode', function(assert) {
+
+            var rect = V('<rect/>').appendTo(V(groupNode));
+            assert.ok(V.isV(rect));
+            assert.equal(rect.node.parentNode, groupNode);
+            assert.equal(rect.node, groupNode.lastChild);
+        });
+
+        QUnit.test('append node', function(assert) {
+
+            var rect = V('<rect/>').appendTo(groupNode);
+            assert.ok(V.isV(rect));
+            assert.equal(rect.node.parentNode, groupNode);
+            assert.equal(rect.node, groupNode.lastChild);
+        });
+    });
+
     QUnit.module('prepend()', function(hooks) {
 
         var groupElement;
@@ -648,4 +730,164 @@ QUnit.module('vectorizer', function(hooks) {
         });
     });
 
+    QUnit.module('convertToPathData()', function(hooks) {
+
+        // round all numbers in a path data string
+        function roundPathData(pathData) {
+            return pathData.split(' ').map(function(command) {
+                var number = parseInt(command, 10);
+                if (isNaN(number)) return command;
+                return number.toFixed(0);
+            }).join(' ');
+        }
+
+        QUnit.test('invalid', function(assert) {
+            assert.throws(function() {
+                var group = V('<group/>');
+                V(group).convertToPathData();
+            }, 'Exception thrown');
+        });
+
+        QUnit.test('<path>', function(assert) {
+            var path = V('<path/>', { d: 'M 100 50 L 200 150' });
+            assert.equal(path.convertToPathData(), 'M 100 50 L 200 150');
+        });
+
+        QUnit.test('<line>', function(assert) {
+            var line = V('<line/>', { x1: 100, y1: 50, x2: 200, y2: 150 });
+            assert.equal(line.convertToPathData(), 'M 100 50 L 200 150');
+        });
+
+        QUnit.test('<rect>', function(assert) {
+            var rect = V('<rect/>', { x: 100, y: 50, width: 200, height: 150 });
+            assert.equal(rect.convertToPathData(), 'M 100 50 H 300 V 200 H 100 V 50 Z');
+        });
+
+        QUnit.test('<rect rx ry/>', function(assert) {
+            var rect = V('<rect/>', { x: 100, y: 50, width: 200, height: 150, rx: 200, ry: 200 });
+            assert.equal(rect.convertToPathData(), 'M 100 125 v 0 a 100 75 0 0 0 100 75 h 0 a 100 75 0 0 0 100 -75 v 0 a 100 75 0 0 0 -100 -75 h 0 a 100 75 0 0 0 -100 75 Z');
+        });
+
+        QUnit.test('<circle>', function(assert) {
+            var circle = V('<circle/>', { cx: 100, cy: 50, r: 50 });
+            assert.equal(roundPathData(circle.convertToPathData()), 'M 100 0 C 127 0 150 22 150 50 C 150 77 127 100 100 100 C 72 100 50 77 50 50 C 50 22 72 0 100 0 Z');
+        });
+
+        QUnit.test('<ellipse>', function(assert) {
+            var ellipse = V('<ellipse/>', { cx: 100, cy: 50, rx: 100, ry: 50 });
+            assert.equal(roundPathData(ellipse.convertToPathData()), 'M 100 0 C 155 0 200 22 200 50 C 200 77 155 100 100 100 C 44 100 0 77 0 50 C 0 22 44 0 100 0 Z');
+        });
+
+        QUnit.test('<polygon>', function(assert) {
+            var polygon = V('<polygon/>', { points: '200,10 250,190 160,210' });
+            assert.equal(polygon.convertToPathData(), 'M 200 10 L250 190 L160 210 Z');
+        });
+
+        QUnit.test('<polyline>', function(assert) {
+            var polyline = V('<polyline/>', { points: '100,10 200,10 150,110' });
+            assert.equal(polyline.convertToPathData(), 'M 100 10 L200 10 L150 110');
+        });
+
+    });
+
+    QUnit.module('transformStringToMatrix()', function(hooks) {
+
+        var svgTestGroup;
+
+        hooks.beforeEach(function() {
+            svgTestGroup = V('g');
+            V(svgContainer).append(svgTestGroup);
+        });
+
+        hooks.afterEach(function() {
+            svgTestGroup.remove();
+        });
+
+        [
+            '',
+            'scale(2)',
+            'scale(2,3)',
+            'scale(2.5,3.1)',
+            'translate(10, 10)',
+            'translate(10,10)',
+            'translate(10.2,11.6)',
+            'rotate(10)',
+            'rotate(10,100,100)',
+            'skewX(40)',
+            'skewY(60)',
+            'scale(2,2) matrix(1 0 0 1 10 10)',
+            'matrix(1 0 0 1 10 10) scale(2,2)',
+            'rotate(10,100,100) matrix(1 0 0 1 10 10) scale(2,2) translate(10,20)'
+        ].forEach(function(transformString) {
+            QUnit.test(transformString, function(assert) {
+                svgTestGroup.attr('transform', transformString);
+                assert.deepEqual(V.transformStringToMatrix(transformString), svgTestGroup.node.getCTM());
+            });
+        });
+    });
+
+    QUnit.module('matrixToTransformString()', function() {
+
+        QUnit.test('return correct transformation string', function(assert) {
+            assert.equal(V.matrixToTransformString(), 'matrix(1,0,0,1,0,0)');
+            assert.equal(V.matrixToTransformString({ a: 2, d: 2 }), 'matrix(2,0,0,2,0,0)');
+            assert.equal(V.matrixToTransformString({ a: 1, b: 2, c: 3, d: 4, e: 5, f: 6 }), 'matrix(1,2,3,4,5,6)');
+            assert.equal(V.matrixToTransformString(V.createSVGMatrix({ a: 1, b: 2, c: 3, d: 4, e: 5, f: 6 })), 'matrix(1,2,3,4,5,6)');
+        });
+    });
+
+    QUnit.module('matrixTo[Transformation]()', function() {
+
+        function roundObject(obj) {
+            for (var i in obj) {
+                if (obj.hasOwnProperty(i)) {
+                    obj[i] = Math.round(obj[i]);
+                }
+            }
+            return obj;
+        }
+
+        QUnit.test('Rotate', function(assert) {
+            var angle;
+            angle = V.matrixToRotate(V.createSVGMatrix().rotate(45));
+            assert.deepEqual(roundObject(angle), { angle: 45 });
+            angle = V.matrixToRotate(V.createSVGMatrix().translate(50,50).rotate(15));
+            assert.deepEqual(roundObject(angle), { angle: 15 });
+            angle = V.matrixToRotate(V.createSVGMatrix().translate(50,50).rotate(60).scale(2));
+            assert.deepEqual(roundObject(angle), { angle: 60 });
+            angle = V.matrixToRotate(V.createSVGMatrix().rotate(60).rotate(60));
+            assert.deepEqual(roundObject(angle), { angle: 120 });
+        });
+
+        QUnit.test('Translate', function(assert) {
+            var translate;
+            translate = V.matrixToTranslate(V.createSVGMatrix().translate(10,20));
+            assert.deepEqual(roundObject(translate), { tx: 10, ty: 20 });
+            translate = V.matrixToTranslate(V.createSVGMatrix().translate(10,20).rotate(10,20).scale(2));
+            assert.deepEqual(roundObject(translate), { tx: 10, ty: 20 });
+            translate = V.matrixToTranslate(V.createSVGMatrix().translate(10,20).translate(30,40));
+            assert.deepEqual(roundObject(translate), { tx: 40, ty: 60 });
+        });
+
+        QUnit.test('Scale', function(assert) {
+            var scale;
+            scale = V.matrixToScale(V.createSVGMatrix().scale(2));
+            assert.deepEqual(roundObject(scale), { sx: 2, sy: 2 });
+            scale = V.matrixToScale(V.createSVGMatrix().translate(15,15).scaleNonUniform(2,3).rotate(10,20));
+            assert.deepEqual(roundObject(scale), { sx: 2, sy: 3 });
+            scale = V.matrixToScale(V.createSVGMatrix().scale(2,2).scale(3,3));
+            assert.deepEqual(roundObject(scale), { sx: 6, sy: 6 });
+        });
+
+    });
+
+    QUnit.module('bbox()', function() {
+
+        QUnit.test('sanity', function(assert) {
+            assert.ok(V(svgCircle).bbox() instanceof g.Rect);
+            assert.ok(V(svgCircle).bbox(true) instanceof g.Rect);
+            assert.ok(V(svgCircle).bbox(false, svgGroup) instanceof g.Rect);
+            assert.ok(V('circle', { class: 'not-in-dom' }).bbox() instanceof g.Rect);
+        });
+    });
 });

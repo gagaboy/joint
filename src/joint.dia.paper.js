@@ -1,5 +1,3 @@
-//      JointJS library.
-//      (c) 2011-2015 client IO
 
 joint.dia.Paper = joint.mvc.View.extend({
 
@@ -12,11 +10,13 @@ joint.dia.Paper = joint.mvc.View.extend({
         origin: { x: 0, y: 0 }, // x,y coordinates in top-left corner
         gridSize: 1,
 
-        /*
-            Whether or not to draw the grid lines on the paper's DOM element.
-            e.g drawGrid: true, drawGrid: { color: 'red', thickness: 2 }
-         */
+        // Whether or not to draw the grid lines on the paper's DOM element.
+        // e.g drawGrid: true, drawGrid: { color: 'red', thickness: 2 }
         drawGrid: false,
+
+        // Whether or not to draw the background on the paper's DOM element.
+        // e.g. background: { color: 'lightblue', image: '/paper-background.png', repeat: 'flip-xy' }
+        background: false,
 
         perpendicularLinks: false,
         elementView: joint.dia.ElementView,
@@ -153,53 +153,148 @@ joint.dia.Paper = joint.mvc.View.extend({
         'mouseout .joint-cell': 'cellMouseout',
         'contextmenu': 'contextmenu',
         'mousewheel': 'mousewheel',
-        'DOMMouseScroll': 'mousewheel'
+        'DOMMouseScroll': 'mousewheel',
+        'mouseenter .joint-cell': 'cellMouseenter',
+        'mouseleave .joint-cell': 'cellMouseleave'
     },
 
-    _highlights: [],
+    _highlights: {},
 
     init: function() {
 
         _.bindAll(this, 'pointerup');
 
-        this.model = this.options.model || new joint.dia.Graph;
+        var model = this.model = this.options.model || new joint.dia.Graph;
+
+        this.setGrid(this.options.drawGrid);
+        this.cloneOptions();
+        this.render();
+        this.setDimensions();
+
+        this.listenTo(model, 'add', this.onCellAdded)
+            .listenTo(model, 'remove', this.removeView)
+            .listenTo(model, 'reset', this.resetViews)
+            .listenTo(model, 'sort', this._onSort)
+            .listenTo(model, 'batch:stop', this._onBatchStop);
+
+        this.on('cell:highlight', this.onCellHighlight)
+            .on('cell:unhighlight', this.onCellUnhighlight)
+            .on('scale translate', this.update);
+
+        // Hold the value when mouse has been moved: when mouse moved, no click event will be triggered.
+        this._mousemoved = 0;
+        // Hash of all cell views.
+        this._views = {};
+        // Reference to the paper owner document
+        this.$document = $(this.el.ownerDocument);
+    },
+
+    cloneOptions: function() {
+
+        var options = this.options;
 
         // This is a fix for the case where two papers share the same options.
         // Changing origin.x for one paper would change the value of origin.x for the other.
         // This prevents that behavior.
-        this.options.origin = _.clone(this.options.origin);
-        this.options.defaultConnector = _.clone(this.options.defaultConnector);
-        // Return default highlighting options into the user specified options.
-        _.defaults(this.options.highlighting, this.constructor.prototype.options.highlighting);
-        this.options.highlighting = _.cloneDeep(this.options.highlighting);
+        options.origin = _.clone(options.origin);
+        options.defaultConnector = _.clone(options.defaultConnector);
+        // Return the default highlighting options into the user specified options.
+        options.highlighting = _.defaultsDeep(
+            {},
+            options.highlighting,
+            this.constructor.prototype.options.highlighting
+        );
+    },
 
-        this.svg = V('svg').node;
+    bindDocumentEvents: function() {
+        var eventNS = this.getEventNamespace();
+        this.$document.on('mouseup' + eventNS + ' touchend' + eventNS, this.pointerup);
+    },
+
+    unbindDocumentEvents: function() {
+        this.$document.off(this.getEventNamespace());
+    },
+
+    render: function() {
+
+        this.$el.empty();
+
+        this.svg = V('svg').attr({ width: '100%', height: '100%' }).node;
         this.viewport = V('g').addClass(joint.util.addClassNamePrefix('viewport')).node;
         this.defs = V('defs').node;
 
         // Append `<defs>` element to the SVG document. This is useful for filters and gradients.
         V(this.svg).append([this.viewport, this.defs]);
 
-        this.$el.append(this.svg);
+        this.$background = $('<div/>').addClass(joint.util.addClassNamePrefix('paper-background'));
+        if (this.options.background) {
+            this.drawBackground(this.options.background);
+        }
 
-        this.listenTo(this.model, 'add', this.onCellAdded);
-        this.listenTo(this.model, 'remove', this.removeView);
-        this.listenTo(this.model, 'reset', this.resetViews);
-        this.listenTo(this.model, 'sort', this._onSort);
-        this.listenTo(this.model, 'batch:stop', this._onBatchStop);
+        this.$grid = $('<div/>').addClass(joint.util.addClassNamePrefix('paper-grid'));
+        if (this.options.drawGrid) {
+            this.drawGrid();
+        }
 
-        this.setOrigin();
-        this.setDimensions();
+        this.$el.append(this.$background, this.$grid, this.svg);
 
-        $(document).on('mouseup touchend', this.pointerup);
+        return this;
+    },
 
-        // Hold the value when mouse has been moved: when mouse moved, no click event will be triggered.
-        this._mousemoved = 0;
-        // Hash of all cell views.
-        this._views = {};
+    update: function() {
 
-        this.on('cell:highlight', this.onCellHighlight, this);
-        this.on('cell:unhighlight', this.onCellUnhighlight, this);
+        if (this.options.drawGrid) {
+            this.drawGrid();
+        }
+
+        if (this._background) {
+            this.updateBackgroundImage(this._background);
+        }
+    },
+
+    // For storing the current transformation matrix (CTM) of the paper's viewport.
+    _viewportMatrix: null,
+    // For verifying whether the CTM is up-to-date. The viewport transform attribute
+    // could have been manipulated directly.
+    _viewportTransformString: null,
+
+    matrix: function(ctm) {
+
+        var viewport = this.viewport;
+
+        // Getter:
+        if (ctm === undefined) {
+
+            var transformString = viewport.getAttribute('transform');
+
+            if ((this._viewportTransformString || null) === transformString) {
+                // It's ok to return the cached matrix. The transform attribute has not changed since
+                // the matrix was stored.
+                ctm = this._viewportMatrix;
+            } else {
+                // The viewport transform attribute has changed. Measure the matrix and cache again.
+                ctm = viewport.getCTM();
+                this._viewportMatrix = ctm;
+                this._viewportTransformString = transformString;
+            }
+
+            // Clone the cached current transformation matrix.
+            // If no matrix previously stored the identity matrix is returned.
+            return V.createSVGMatrix(ctm);
+        }
+
+        // Setter:
+        ctm = V.createSVGMatrix(ctm);
+        V(viewport).transform(ctm, { absolute: true });
+        this._viewportMatrix = ctm;
+        this._viewportTransformString = viewport.getAttribute('transform');
+
+        return this;
+    },
+
+    clientMatrix: function() {
+
+        return V.createSVGMatrix(this.viewport.getScreenCTM());
     },
 
     _onSort: function() {
@@ -219,8 +314,7 @@ joint.dia.Paper = joint.mvc.View.extend({
 
         //clean up all DOM elements/views to prevent memory leaks
         this.removeViews();
-
-        $(document).off('mouseup touchend', this.pointerup);
+        this.unbindDocumentEvents();
     },
 
     setDimensions: function(width, height) {
@@ -228,23 +322,17 @@ joint.dia.Paper = joint.mvc.View.extend({
         width = this.options.width = width || this.options.width;
         height = this.options.height = height || this.options.height;
 
-        V(this.svg).attr({ width: width, height: height });
+        this.$el.css({
+            width: Math.round(width),
+            height: Math.round(height)
+        });
 
         this.trigger('resize', width, height);
     },
 
     setOrigin: function(ox, oy) {
 
-        this.options.origin.x = ox || 0;
-        this.options.origin.y = oy || 0;
-
-        V(this.viewport).translate(ox, oy, { absolute: true });
-
-        this.trigger('translate', ox, oy);
-
-        if (this.options.drawGrid) {
-            this.drawGrid();
-        }
+        return this.translate(ox || 0, oy || 0, { absolute: true });
     },
 
     // Expand/shrink the paper to fit the content. Snap the width/height to the grid
@@ -273,7 +361,8 @@ joint.dia.Paper = joint.mvc.View.extend({
         // Calculate the paper size to accomodate all the graph's elements.
         var bbox = V(this.viewport).bbox(true, this.svg);
 
-        var currentScale = V(this.viewport).scale();
+        var currentScale = this.scale();
+        var currentTranslate = this.translate();
 
         bbox.x *= currentScale.sx;
         bbox.y *= currentScale.sy;
@@ -310,11 +399,11 @@ joint.dia.Paper = joint.mvc.View.extend({
         calcHeight = Math.min(calcHeight, opt.maxHeight || Number.MAX_VALUE);
 
         var dimensionChange = calcWidth != this.options.width || calcHeight != this.options.height;
-        var originChange = tx != this.options.origin.x || ty != this.options.origin.y;
+        var originChange = tx != currentTranslate.tx || ty != currentTranslate.ty;
 
         // Change the dimensions only if there is a size discrepency or an origin change
         if (originChange) {
-            this.setOrigin(tx, ty);
+            this.translate(tx, ty);
         }
         if (dimensionChange) {
             this.setDimensions(calcWidth, calcHeight);
@@ -349,12 +438,18 @@ joint.dia.Paper = joint.mvc.View.extend({
         var minScaleY = opt.minScaleY || opt.minScale;
         var maxScaleY = opt.maxScaleY || opt.maxScale;
 
-        var fittingBBox = opt.fittingBBox || ({
-            x: this.options.origin.x,
-            y: this.options.origin.y,
-            width: this.options.width,
-            height: this.options.height
-        });
+        var fittingBBox;
+        if (opt.fittingBBox) {
+            fittingBBox = opt.fittingBBox;
+        } else {
+            var currentTranslate = this.translate();
+            fittingBBox = {
+                x: currentTranslate.tx,
+                y: currentTranslate.ty,
+                width: this.options.width,
+                height: this.options.height
+            };
+        }
 
         fittingBBox = g.rect(fittingBBox).moveAndExpand({
             x: padding,
@@ -363,7 +458,7 @@ joint.dia.Paper = joint.mvc.View.extend({
             height: -2 * padding
         });
 
-        var currentScale = V(this.viewport).scale();
+        var currentScale = this.scale();
 
         var newSx = fittingBBox.width / contentBBox.width * currentScale.sx;
         var newSy = fittingBBox.height / contentBBox.height * currentScale.sy;
@@ -392,7 +487,7 @@ joint.dia.Paper = joint.mvc.View.extend({
         var newOx = fittingBBox.x - contentTranslation.x;
         var newOy = fittingBBox.y - contentTranslation.y;
 
-        this.setOrigin(newOx, newOy);
+        this.translate(newOx, newOy);
     },
 
     getContentBBox: function() {
@@ -401,14 +496,14 @@ joint.dia.Paper = joint.mvc.View.extend({
 
         // Using Screen CTM was the only way to get the real viewport bounding box working in both
         // Google Chrome and Firefox.
-        var screenCTM = this.viewport.getScreenCTM();
+        var clientCTM = this.clientMatrix();
 
         // for non-default origin we need to take the viewport translation into account
-        var viewportCTM = this.viewport.getCTM();
+        var currentTranslate = this.translate();
 
         return g.rect({
-            x: crect.left - screenCTM.e + viewportCTM.e,
-            y: crect.top - screenCTM.f + viewportCTM.f,
+            x: crect.left - clientCTM.e + currentTranslate.tx,
+            y: crect.top - clientCTM.f + currentTranslate.ty,
             width: crect.width,
             height: crect.height
         });
@@ -419,10 +514,12 @@ joint.dia.Paper = joint.mvc.View.extend({
     // and the top border to the bottom one).
     getArea: function() {
 
-        var transformationMatrix = this.viewport.getCTM().inverse();
-        var noTransformationBBox = { x: 0, y: 0, width: this.options.width, height: this.options.height };
-
-        return g.rect(V.transformRect(noTransformationBBox, transformationMatrix));
+        return this.paperToLocalRect({
+            x: 0,
+            y: 0,
+            width: this.options.width,
+            height: this.options.height
+        });
     },
 
     getRestrictedArea: function() {
@@ -590,14 +687,13 @@ joint.dia.Paper = joint.mvc.View.extend({
 
             var batchSize = (this.options.async && this.options.async.batchSize) || 50;
             var batchCells = cells.splice(0, batchSize);
-            var collection = this.model.get('cells');
 
             _.each(batchCells, function(cell) {
 
-                // The cell has to be part of the graph collection.
+                // The cell has to be part of the graph.
                 // There is a chance in asynchronous rendering
                 // that a cell was removed before it's rendered to the paper.
-                if (cell.collection === collection) this.renderView(cell);
+                if (cell.graph === this.model) this.renderView(cell);
 
             }, this);
 
@@ -639,53 +735,91 @@ joint.dia.Paper = joint.mvc.View.extend({
 
     scale: function(sx, sy, ox, oy) {
 
-        sy = sy || sx;
+        // getter
+        if (sx === undefined) {
+            return V.matrixToScale(this.matrix());
+        }
 
-        if (_.isUndefined(ox)) {
-
+        // setter
+        if (sy === undefined) {
+            sy = sx;
+        }
+        if (ox === undefined) {
             ox = 0;
             oy = 0;
         }
 
-        // Remove previous transform so that the new scale is not affected by previous scales, especially
-        // the old translate() does not affect the new translate if an origin is specified.
-        V(this.viewport).attr('transform', '');
+        var translate = this.translate();
 
-        var oldTx = this.options.origin.x;
-        var oldTy = this.options.origin.y;
-
-        // TODO: V.scale() doesn't support setting scale origin. #Fix
-        if (ox || oy || oldTx || oldTy) {
-
-            var newTx = oldTx - ox * (sx - 1);
-            var newTy = oldTy - oy * (sy - 1);
-            this.setOrigin(newTx, newTy);
+        if (ox || oy || translate.tx || translate.ty) {
+            var newTx = translate.tx - ox * (sx - 1);
+            var newTy = translate.ty - oy * (sy - 1);
+            this.translate(newTx, newTy);
         }
 
-        V(this.viewport).scale(sx, sy);
+        var ctm = this.matrix();
+        ctm.a = sx || 0;
+        ctm.d = sy || 0;
+
+        this.matrix(ctm);
 
         this.trigger('scale', sx, sy, ox, oy);
+
+        return this;
+    },
+
+    // Experimental - do not use in production.
+    rotate: function(angle, cx, cy) {
+
+        // getter
+        if (angle === undefined) {
+            return V.matrixToRotate(this.matrix());
+        }
+
+        // setter
+
+        // If the origin is not set explicitely, rotate around the center. Note that
+        // we must use the plain bounding box (`this.el.getBBox()` instead of the one that gives us
+        // the real bounding box (`bbox()`) including transformations).
+        if (cx === undefined) {
+            var bbox = this.viewport.getBBox();
+            cx = bbox.width / 2;
+            cy = bbox.height / 2;
+        }
+
+        var ctm = this.matrix().translate(cx,cy).rotate(angle).translate(-cx,-cy);
+        this.matrix(ctm);
+
+        return this;
+    },
+
+    translate: function(tx, ty) {
+
+        // getter
+        if (tx === undefined) {
+            return V.matrixToTranslate(this.matrix());
+        }
+
+        // setter
+
+        var ctm = this.matrix();
+        ctm.e = tx || 0;
+        ctm.f = ty || 0;
+
+        this.matrix(ctm);
+
+        var newTranslate = this.translate();
+        var origin = this.options.origin;
+        origin.x = newTranslate.tx;
+        origin.y = newTranslate.ty;
+
+        this.trigger('translate', newTranslate.tx, newTranslate.ty);
 
         if (this.options.drawGrid) {
             this.drawGrid();
         }
 
         return this;
-    },
-
-    rotate: function(deg, ox, oy) {
-
-        // If the origin is not set explicitely, rotate around the center. Note that
-        // we must use the plain bounding box (`this.el.getBBox()` instead of the one that gives us
-        // the real bounding box (`bbox()`) including transformations).
-        if (_.isUndefined(ox)) {
-
-            var bbox = this.viewport.getBBox();
-            ox = bbox.width / 2;
-            oy = bbox.height / 2;
-        }
-
-        V(this.viewport).rotate(deg, ox, oy);
     },
 
     // Find the first view climbing up the DOM tree starting at element `el`. Note that `el` can also
@@ -746,43 +880,102 @@ joint.dia.Paper = joint.mvc.View.extend({
         return this.model.getCell(id);
     },
 
-    snapToGrid: function(p) {
+    snapToGrid: function(x, y) {
 
         // Convert global coordinates to the local ones of the `viewport`. Otherwise,
         // improper transformation would be applied when the viewport gets transformed (scaled/rotated).
-        var localPoint = V(this.viewport).toLocalPoint(p.x, p.y);
+        return this.clientToLocalPoint(x, y).snapToGrid(this.options.gridSize);
+    },
 
-        return {
-            x: g.snapToGrid(localPoint.x, this.options.gridSize),
-            y: g.snapToGrid(localPoint.y, this.options.gridSize)
-        };
+    localToPaperPoint: function(x, y) {
+        // allow `x` to be a point and `y` undefined
+        var localPoint = g.Point(x, y);
+        var paperPoint = V.transformPoint(localPoint, this.matrix());
+        return g.Point(paperPoint);
+    },
+
+    localToPaperRect: function(x, y, width, height) {
+        // allow `x` to be a rectangle and rest arguments undefined
+        var localRect = g.Rect(x, y);
+        var paperRect = V.transformRect(localRect, this.matrix());
+        return g.Rect(paperRect);
+    },
+
+    paperToLocalPoint: function(x, y) {
+        // allow `x` to be a point and `y` undefined
+        var paperPoint = g.Point(x, y);
+        var localPoint = V.transformPoint(paperPoint, this.matrix().inverse());
+        return g.Point(localPoint);
+    },
+
+    paperToLocalRect: function(x, y, width, height) {
+        // allow `x` to be a rectangle and rest arguments undefined
+        var paperRect = g.Rect(x, y, width, height);
+        var localRect = V.transformRect(paperRect, this.matrix().inverse());
+        return g.Rect(localRect);
+    },
+
+    localToClientPoint: function(x, y) {
+        // allow `x` to be a point and `y` undefined
+        var localPoint = g.Point(x, y);
+        var clientPoint = V.transformPoint(localPoint, this.clientMatrix());
+        return g.Point(clientPoint);
+    },
+
+    localToClientRect: function(x, y, width, height) {
+        // allow `x` to be a point and `y` undefined
+        var localRect = g.Rect(x, y, width, height);
+        var clientRect = V.transformRect(localRect, this.clientMatrix());
+        return g.Rect(clientRect);
     },
 
     // Transform client coordinates to the paper local coordinates.
     // Useful when you have a mouse event object and you'd like to get coordinates
     // inside the paper that correspond to `evt.clientX` and `evt.clientY` point.
-    // Exmaple: var paperPoint = paper.clientToLocalPoint({ x: evt.clientX, y: evt.clientY });
-    clientToLocalPoint: function(p) {
+    // Example: var localPoint = paper.clientToLocalPoint({ x: evt.clientX, y: evt.clientY });
+    clientToLocalPoint: function(x, y) {
+        // allow `x` to be a point and `y` undefined
+        var clientPoint = g.Point(x, y);
+        var localPoint = V.transformPoint(clientPoint, this.clientMatrix().inverse());
+        return g.Point(localPoint);
+    },
 
-        p = g.point(p);
+    clientToLocalRect: function(x, y, width, height) {
+        // allow `x` to be a point and `y` undefined
+        var clientRect = g.Rect(x, y, width, height);
+        var localRect = V.transformRect(clientRect, this.clientMatrix().inverse());
+        return g.Rect(localRect);
+    },
 
-        // This is a hack for Firefox! If there wasn't a fake (non-visible) rectangle covering the
-        // whole SVG area, `$(paper.svg).offset()` used below won't work.
-        var fakeRect = V('rect', { width: this.options.width, height: this.options.height, x: 0, y: 0, opacity: 0 });
-        V(this.svg).prepend(fakeRect);
+    localToPagePoint: function(x, y) {
+        return this.localToPaperPoint(x, y).offset(this.pageOffset());
+    },
 
-        var paperOffset = $(this.svg).offset();
+    localToPageRect: function(x, y, width, height) {
+        return this.localToPaperRect(x, y, width, height).moveAndExpand(this.pageOffset());
+    },
 
-        // Clean up the fake rectangle once we have the offset of the SVG document.
-        fakeRect.remove();
+    pageToLocalPoint: function(x, y) {
+        var pagePoint = g.Point(x, y);
+        var paperPoint = pagePoint.difference(this.pageOffset());
+        return this.paperToLocalPoint(paperPoint);
+    },
 
-        var scrollTop = document.body.scrollTop || document.documentElement.scrollTop;
-        var scrollLeft = document.body.scrollLeft || document.documentElement.scrollLeft;
+    pageToLocalRect: function(x, y, width, height) {
+        var pageOffset = this.pageOffset();
+        var paperRect = g.Rect(x, y, width, height);
+        paperRect.x -= pageOffset.x;
+        paperRect.y -= pageOffset.y;
+        return this.paperToLocalRect(paperRect);
+    },
 
-        p.offset(scrollLeft - paperOffset.left, scrollTop - paperOffset.top);
+    clientOffset: function() {
+        var clientRect = this.svg.getBoundingClientRect();
+        return g.Point(clientRect.left, clientRect.top);
+    },
 
-        // Transform point into the viewport coordinate system.
-        return V.transformPoint(p, this.viewport.getCTM().inverse());
+    pageOffset: function() {
+        return this.clientOffset().offset(window.scrollX, window.scrollY);
     },
 
     linkAllowed: function(linkViewOrModel) {
@@ -921,6 +1114,9 @@ joint.dia.Paper = joint.mvc.View.extend({
 
         opt = this.resolveHighlighter(opt);
         if (!opt) return;
+        if (!magnetEl.id) {
+            magnetEl.id = V.uniqueId();
+        }
 
         var key = opt.name + magnetEl.id + JSON.stringify(opt.options);
         if (!this._highlights[key]) {
@@ -1047,6 +1243,8 @@ joint.dia.Paper = joint.mvc.View.extend({
 
     pointerdown: function(evt) {
 
+        this.bindDocumentEvents();
+
         evt = joint.util.normalizeEvent(evt);
 
         var view = this.findView(evt.target);
@@ -1087,6 +1285,8 @@ joint.dia.Paper = joint.mvc.View.extend({
     },
 
     pointerup: function(evt) {
+
+        this.unbindDocumentEvents();
 
         evt = joint.util.normalizeEvent(evt);
 
@@ -1145,6 +1345,24 @@ joint.dia.Paper = joint.mvc.View.extend({
         }
     },
 
+    cellMouseenter: function(evt) {
+
+        evt = joint.util.normalizeEvent(evt);
+        var view = this.findView(evt.target);
+        if (view && !this.guard(evt, view)) {
+            view.mouseenter(evt);
+        }
+    },
+
+    cellMouseleave: function(evt) {
+
+        evt = joint.util.normalizeEvent(evt);
+        var view = this.findView(evt.target);
+        if (view && !this.guard(evt, view)) {
+            view.mouseleave(evt);
+        }
+    },
+
     setGridSize: function(gridSize) {
 
         this.options.gridSize = gridSize;
@@ -1158,47 +1376,249 @@ joint.dia.Paper = joint.mvc.View.extend({
 
     clearGrid: function() {
 
-        this.el.style.backgroundImage = 'none';
+        if (this.$grid) {
+            this.$grid.css('backgroundImage', 'none');
+        }
         return this;
+    },
+
+    _getGriRefs: function () {
+
+        if (!this._gridCache) {
+
+            this._gridCache = {
+                root: V('svg', { width: '100%', height: '100%' }, V('defs')),
+                patterns: {},
+                add: function (id, vel) {
+                    V(this.root.node.childNodes[0]).append(vel);
+                    this.patterns[id] = vel;
+                    this.root.append(V('rect', { width: "100%", height: "100%", fill: 'url(#' + id + ')' }));
+                },
+                get: function (id) {
+                    return  this.patterns[id]
+                },
+                exist: function (id) {
+                    return this.patterns[id] !== undefined;
+                }
+            }
+        }
+
+        return this._gridCache;
+    },
+
+    setGrid:function (drawGrid) {
+
+        this.clearGrid();
+
+        this._gridCache = null;
+        this._gridSettings = [];
+
+        var optionsList = _.isArray(drawGrid) ? drawGrid : [drawGrid || {}];
+        _.each(optionsList, function (item) {
+            this._gridSettings.push.apply(this._gridSettings, this._resolveDrawGridOption(item));
+        }, this);
+        return this;
+    },
+
+    _resolveDrawGridOption: function (opt) {
+
+        var namespace = this.constructor.gridPatterns;
+        if (_.isString(opt) && namespace[opt]) {
+            return _.map(namespace[opt], _.clone);
+        }
+
+        var options = opt || { args: [{}] };
+        var isArray = _.isArray(options);
+        var name = options.name;
+
+        if (!isArray && !name && !options.markup ) {
+            name = 'dot';
+        }
+
+        if (name && namespace[name]) {
+            var pattern = _.map(namespace[name], _.clone);
+
+            var args = _.isArray(options.args) ? options.args : [options.args || {}];
+
+            _.defaults(args[0], _.omit(opt, 'args'));
+            for (var i = 0; i < args.length; i++) {
+                if (pattern[i]) {
+                    _.extend(pattern[i], args[i]);
+                }
+            }
+            return pattern;
+        }
+
+        return isArray ? options : [options];
     },
 
     drawGrid: function(opt) {
 
-        opt = _.defaults(opt || {}, this.options.drawGrid, {
-            color: '#aaa',
-            thickness: 1
-        });
-
         var gridSize = this.options.gridSize;
-
         if (gridSize <= 1) {
             return this.clearGrid();
         }
 
-        var currentScale = V(this.viewport).scale();
-        var scaleX = currentScale.sx;
-        var scaleY = currentScale.sy;
-        var originX = this.options.origin.x;
-        var originY = this.options.origin.y;
-        var gridX = gridSize * scaleX;
-        var gridY = gridSize * scaleY;
+        var localOptions = _.isArray(opt) ? opt : [opt];
 
-        var canvas = document.createElement('canvas');
+        var ctm = this.matrix();
+        var refs = this._getGriRefs();
 
-        canvas.width = gridX;
-        canvas.height = gridY;
+        _.each(this._gridSettings, function (gridLayerSetting, index) {
 
-        gridX = originX >= 0 ? originX % gridX : gridX + originX % gridX;
-        gridY = originY >= 0 ? originY % gridY : gridY + originY % gridY;
+            var id = 'pattern_'  + index;
+            var options = _.merge(gridLayerSetting, localOptions[index], {
+                sx: ctm.a || 1,
+                sy: ctm.d || 1,
+                ox: ctm.e || 0,
+                oy: ctm.f || 0
+            });
 
-        var context = canvas.getContext('2d');
-        context.beginPath();
-        context.rect(gridX, gridY, opt.thickness * scaleX, opt.thickness * scaleY);
-        context.fillStyle = opt.color;
-        context.fill();
+            options.width = gridSize * (ctm.a || 1) * (options.scaleFactor || 1);
+            options.height = gridSize * (ctm.d || 1) * (options.scaleFactor || 1);
 
-        var backgroundImage = canvas.toDataURL('image/png');
-        this.el.style.backgroundImage = 'url("' + backgroundImage + '")';
+            if (!refs.exist(id)) {
+                refs.add(id, V('pattern', { id: id, patternUnits: 'userSpaceOnUse' }, V(options.markup)))
+            }
+
+            var patternDefVel = refs.get(id);
+
+            if (_.isFunction(options.update)) {
+                options.update(patternDefVel.node.childNodes[0], options);
+            }
+
+            var x = options.ox % options.width;
+            if (x < 0) x += options.width;
+
+            var y = options.oy % options.height;
+            if (y < 0) y += options.height;
+
+            patternDefVel.attr({
+                x: x,
+                y: y,
+                width: options.width,
+                height: options.height
+            });
+        });
+
+        var patternUri = new XMLSerializer().serializeToString(refs.root.node);
+        patternUri = 'url(data:image/svg+xml;base64,' + btoa(patternUri) + ')';
+
+        this.$grid.css('backgroundImage', patternUri);
+
+        return this;
+    },
+
+    updateBackgroundImage: function(opt) {
+
+        opt = opt || {};
+
+        var backgroundPosition = opt.position || 'center';
+        var backgroundSize = opt.size || 'auto auto';
+
+        var currentScale = this.scale();
+        var currentTranslate = this.translate();
+
+        // backgroundPosition
+        if (_.isObject(backgroundPosition)) {
+            var x = currentTranslate.tx + (currentScale.sx * (backgroundPosition.x || 0));
+            var y = currentTranslate.ty + (currentScale.sy * (backgroundPosition.y || 0));
+            backgroundPosition = x + 'px ' + y + 'px';
+        }
+
+        // backgroundSize
+        if (_.isObject(backgroundSize)) {
+            backgroundSize = g.rect(backgroundSize).scale(currentScale.sx, currentScale.sy);
+            backgroundSize = backgroundSize.width + 'px ' + backgroundSize.height + 'px';
+        }
+
+        this.$background.css({
+            backgroundSize: backgroundSize,
+            backgroundPosition: backgroundPosition
+        });
+    },
+
+    drawBackgroundImage: function(img, opt) {
+
+        // Clear the background image if no image provided
+        if (!(img instanceof HTMLImageElement)) {
+            this.$background.css('backgroundImage', '');
+            return;
+        }
+
+        opt = opt || {};
+
+        var backgroundImage;
+        var backgroundSize = opt.size;
+        var backgroundRepeat = opt.repeat || 'no-repeat';
+        var backgroundOpacity = opt.opacity || 1;
+        var backgroundQuality = Math.abs(opt.quality) || 1;
+        var backgroundPattern = this.constructor.backgroundPatterns[_.camelCase(backgroundRepeat)];
+
+        if (_.isFunction(backgroundPattern)) {
+            // 'flip-x', 'flip-y', 'flip-xy', 'watermark' and custom
+            img.width *= backgroundQuality;
+            img.height *= backgroundQuality;
+            var canvas = backgroundPattern(img, opt);
+            if (!(canvas instanceof HTMLCanvasElement)) {
+                throw new Error('dia.Paper: background pattern must return an HTML Canvas instance');
+            }
+
+            backgroundImage = canvas.toDataURL('image/png');
+            backgroundRepeat = 'repeat';
+            if (_.isObject(backgroundSize)) {
+                // recalculate the tile size if an object passed in
+                backgroundSize.width *= canvas.width / img.width;
+                backgroundSize.height *= canvas.height / img.height;
+            } else if (_.isUndefined(backgroundSize)) {
+                // calcule the tile size if no provided
+                opt.size = {
+                    width: canvas.width / backgroundQuality,
+                    height: canvas.height / backgroundQuality
+                };
+            }
+        } else {
+            // backgroundRepeat:
+            // no-repeat', 'round', 'space', 'repeat', 'repeat-x', 'repeat-y'
+            backgroundImage = img.src;
+            if (_.isUndefined(backgroundSize)) {
+                // pass the image size for  the backgroundSize if no size provided
+                opt.size = {
+                    width: img.width,
+                    height: img.height
+                };
+            }
+        }
+
+        this.$background.css({
+            opacity: backgroundOpacity,
+            backgroundRepeat: backgroundRepeat,
+            backgroundImage: 'url(' + backgroundImage + ')'
+        });
+
+        this.updateBackgroundImage(opt);
+    },
+
+    updateBackgroundColor: function(color) {
+
+        this.$el.css('backgroundColor', color || '');
+    },
+
+    drawBackground: function(opt) {
+
+        opt = opt || {};
+
+        this.updateBackgroundColor(opt.color);
+
+        if (opt.image) {
+            opt = this._background = _.cloneDeep(opt);
+            var img = document.createElement('img');
+            img.onload = _.bind(this.drawBackgroundImage, this, img, opt);
+            img.src = opt.image;
+        } else {
+            this.drawBackgroundImage(null);
+            this._background = null;
+        }
 
         return this;
     },
@@ -1208,5 +1628,320 @@ joint.dia.Paper = joint.mvc.View.extend({
         this.options.interactive = value;
 
         _.invoke(this._views, 'setInteractivity', value);
+    },
+
+    // Paper Defs
+
+    isDefined: function(defId) {
+        return !!this.svg.getElementById(defId);
+    },
+
+    defineFilter: function(filter) {
+
+        if (!_.isObject(filter)) {
+            throw new TypeError('dia.Paper: defineFilter() requires 1. argument to be an object.');
+        }
+
+        var filterId = filter.id;
+        var name = filter.name;
+        // Generate a hash code from the stringified filter definition. This gives us
+        // a unique filter ID for different definitions.
+        if (!filterId) {
+            filterId = name + this.svg.id + joint.util.hashCode(JSON.stringify(filter));
+        }
+        // If the filter already exists in the document,
+        // we're done and we can just use it (reference it using `url()`).
+        // If not, create one.
+        if (!this.isDefined(filterId)) {
+
+            var namespace = joint.util.filter;
+            var filterSVGString = namespace[name] && namespace[name](filter.args || {});
+            if (!filterSVGString) {
+                throw new Error('Non-existing filter ' + name);
+            }
+
+            // Set the filter area to be 3x the bounding box of the cell
+            // and center the filter around the cell.
+            var filterAttrs = _.extend({
+                filterUnits: 'objectBoundingBox',
+                x: -1,
+                y: -1,
+                width: 3,
+                height: 3
+            }, filter.attrs, {
+                id: filterId
+            });
+
+            V(filterSVGString, filterAttrs).appendTo(this.defs);
+        }
+
+        return filterId;
+    },
+
+    defineGradient: function(gradient) {
+
+        if (!_.isObject(gradient)) {
+            throw new TypeError('dia.Paper: defineGradient() requires 1. argument to be an object.');
+        }
+
+        var gradientId = gradient.id;
+        var type = gradient.type;
+        var stops = gradient.stops;
+        // Generate a hash code from the stringified filter definition. This gives us
+        // a unique filter ID for different definitions.
+        if (!gradientId) {
+            gradientId = type + this.svg.id + joint.util.hashCode(JSON.stringify(gradient));
+        }
+        // If the gradient already exists in the document,
+        // we're done and we can just use it (reference it using `url()`).
+        // If not, create one.
+        if (!this.isDefined(gradientId)) {
+
+            var stopTemplate = joint.util.template('<stop offset="${offset}" stop-color="${color}" stop-opacity="${opacity}"/>');
+            var gradientStopsStrings = _.map(stops, function(stop) {
+                return stopTemplate({
+                    offset: stop.offset,
+                    color: stop.color,
+                    opacity: _.isFinite(stop.opacity) ? stop.opacity : 1
+                });
+            });
+
+            var gradientSVGString = [
+                '<' + type + '>',
+                gradientStopsStrings.join(''),
+                '</' + type + '>'
+            ].join('');
+
+            var gradientAttrs = _.extend({ id: gradientId }, gradient.attrs);
+
+            V(gradientSVGString, gradientAttrs).appendTo(this.defs);
+        }
+
+        return gradientId;
+    },
+
+    defineMarker: function(marker) {
+
+        if (!_.isObject(marker)) {
+            throw new TypeError('dia.Paper: defineMarker() requires 1. argument to be an object.');
+        }
+
+        var markerId = marker.id;
+
+        // Generate a hash code from the stringified filter definition. This gives us
+        // a unique filter ID for different definitions.
+        if (!markerId) {
+            markerId = this.svg.id + joint.util.hashCode(JSON.stringify(marker));
+        }
+
+        if (!this.isDefined(markerId)) {
+
+            var attrs = _.omit(marker, 'type', 'userSpaceOnUse');
+            var pathMarker = V('marker', {
+                id: markerId,
+                orient: 'auto',
+                overflow: 'visible',
+                markerUnits: marker.markerUnits || 'userSpaceOnUse'
+            }, [
+                V(marker.type || 'path', attrs)
+            ]);
+
+            pathMarker.appendTo(this.defs);
+        }
+
+        return markerId;
+    }
+
+}, {
+
+    backgroundPatterns: {
+
+        flipXy: function(img) {
+            // d b
+            // q p
+
+            var canvas = document.createElement('canvas');
+            var imgWidth = img.width;
+            var imgHeight = img.height;
+
+            canvas.width = 2 * imgWidth;
+            canvas.height = 2 * imgHeight;
+
+            var ctx = canvas.getContext('2d');
+            // top-left image
+            ctx.drawImage(img, 0, 0, imgWidth, imgHeight);
+            // xy-flipped bottom-right image
+            ctx.setTransform(-1, 0, 0, -1, canvas.width, canvas.height);
+            ctx.drawImage(img, 0, 0, imgWidth, imgHeight);
+            // x-flipped top-right image
+            ctx.setTransform(-1, 0, 0, 1, canvas.width, 0);
+            ctx.drawImage(img, 0, 0, imgWidth, imgHeight);
+            // y-flipped bottom-left image
+            ctx.setTransform(1, 0, 0, -1, 0, canvas.height);
+            ctx.drawImage(img, 0, 0, imgWidth, imgHeight);
+
+            return canvas;
+        },
+
+        flipX: function(img) {
+            // d b
+            // d b
+
+            var canvas = document.createElement('canvas');
+            var imgWidth = img.width;
+            var imgHeight = img.height;
+
+            canvas.width = imgWidth * 2;
+            canvas.height = imgHeight;
+
+            var ctx = canvas.getContext('2d');
+            // left image
+            ctx.drawImage(img, 0, 0, imgWidth, imgHeight);
+            // flipped right image
+            ctx.translate(2 * imgWidth, 0);
+            ctx.scale(-1, 1);
+            ctx.drawImage(img, 0, 0, imgWidth, imgHeight);
+
+            return canvas;
+        },
+
+        flipY: function(img) {
+            // d d
+            // q q
+
+            var canvas = document.createElement('canvas');
+            var imgWidth = img.width;
+            var imgHeight = img.height;
+
+            canvas.width = imgWidth;
+            canvas.height = imgHeight * 2;
+
+            var ctx = canvas.getContext('2d');
+            // top image
+            ctx.drawImage(img, 0, 0, imgWidth, imgHeight);
+            // flipped bottom image
+            ctx.translate(0, 2 * imgHeight);
+            ctx.scale(1, -1);
+            ctx.drawImage(img, 0, 0, imgWidth, imgHeight);
+
+            return canvas;
+        },
+
+        watermark: function(img, opt) {
+            //   d
+            // d
+
+            opt = opt || {};
+
+            var imgWidth = img.width;
+            var imgHeight = img.height;
+
+            var canvas = document.createElement('canvas');
+            canvas.width = imgWidth * 3;
+            canvas.height = imgHeight * 3;
+
+            var ctx = canvas.getContext('2d');
+            var angle = _.isNumber(opt.watermarkAngle) ? -opt.watermarkAngle : -20;
+            var radians = g.toRad(angle);
+            var stepX = canvas.width / 4;
+            var stepY = canvas.height / 4;
+
+            for (var i = 0; i < 4; i ++) {
+                for (var j = 0; j < 4; j++) {
+                    if ((i + j) % 2 > 0) {
+                        // reset the current transformations
+                        ctx.setTransform(1, 0, 0, 1, (2 * i - 1) * stepX, (2 * j - 1)  * stepY);
+                        ctx.rotate(radians);
+                        ctx.drawImage(img, -imgWidth / 2, -imgHeight / 2, imgWidth, imgHeight);
+                    }
+                }
+            }
+
+            return canvas;
+        }
+    },
+
+    gridPatterns: {
+        dot: [{
+            color: '#AAAAAA',
+            thickness: 1,
+            markup: 'rect',
+            update: function(el, opt) {
+                V(el).attr({
+                    width: opt.thickness * opt.sx,
+                    height: opt.thickness * opt.sy,
+                    fill: opt.color
+                });
+            }
+        }],
+        fixedDot: [{
+            color: '#AAAAAA',
+            thickness: 1,
+            markup: 'rect',
+            update: function(el, opt) {
+                var size = opt.sx <= 1 ? opt.thickness * opt.sx : opt.thickness;
+                V(el).attr({ width: size, height: size, fill: opt.color });
+            }
+        }],
+        mesh: [{
+            color: '#AAAAAA',
+            thickness: 1,
+            markup: 'path',
+            update: function(el, opt) {
+
+                var d;
+                var width = opt.width;
+                var height = opt.height;
+                var thickness = opt.thickness;
+
+                if (width - thickness >= 0 && height - thickness >= 0) {
+                    d = ['M', width, 0, 'H0 M0 0 V0', height].join(' ');
+                } else {
+                    d = 'M 0 0 0 0';
+                }
+
+                V(el).attr({ 'd': d, stroke: opt.color, 'stroke-width': opt.thickness });
+            }
+        }],
+        doubleMesh: [{
+            color: '#AAAAAA',
+            thickness: 1,
+            markup: 'path',
+            update: function(el, opt) {
+
+                var d;
+                var width = opt.width;
+                var height = opt.height;
+                var thickness = opt.thickness;
+
+                if (width - thickness >= 0 && height - thickness >= 0) {
+                    d = ['M', width, 0, 'H0 M0 0 V0', height].join(' ');
+                } else {
+                    d = 'M 0 0 0 0';
+                }
+
+                V(el).attr({ 'd': d, stroke: opt.color, 'stroke-width': opt.thickness });
+            }
+        }, {
+            color: '#000000',
+            thickness: 3,
+            scaleFactor: 4,
+            markup: 'path',
+            update: function(el, opt) {
+
+                var d;
+                var width = opt.width;
+                var height = opt.height;
+                var thickness = opt.thickness;
+
+                if (width - thickness >= 0 && height - thickness >= 0) {
+                    d = ['M', width, 0, 'H0 M0 0 V0', height].join(' ');
+                } else {
+                    d = 'M 0 0 0 0';
+                }
+
+                V(el).attr({ 'd': d, stroke: opt.color, 'stroke-width': opt.thickness });
+            }
+        }]
     }
 });

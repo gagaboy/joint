@@ -1,5 +1,3 @@
-//      JointJS library.
-//      (c) 2011-2015 client IO
 
 // Global namespace.
 
@@ -115,8 +113,7 @@ var joint = {
 
         getByPath: function(obj, path, delim) {
 
-            delim = delim || '/';
-            var keys = path.split(delim);
+            var keys = _.isArray(path) ? path.slice() : path.split(delim || '/');
             var key;
 
             while (keys.length) {
@@ -132,23 +129,18 @@ var joint = {
 
         setByPath: function(obj, path, value, delim) {
 
-            delim = delim || '/';
+            var keys = _.isArray(path) ? path : path.split(delim || '/');
 
-            var keys = path.split(delim);
             var diver = obj;
             var i = 0;
 
-            if (path.indexOf(delim) > -1) {
-
-                for (var len = keys.length; i < len - 1; i++) {
-                    // diver creates an empty object if there is no nested object under such a key.
-                    // This means that one can populate an empty nested object with setByPath().
-                    diver = diver[keys[i]] || (diver[keys[i]] = {});
-                }
-                diver[keys[len - 1]] = value;
-            } else {
-                obj[path] = value;
+            for (var len = keys.length; i < len - 1; i++) {
+                // diver creates an empty object if there is no nested object under such a key.
+                // This means that one can populate an empty nested object with setByPath().
+                diver = diver[keys[i]] || (diver[keys[i]] = {});
             }
+            diver[keys[len - 1]] = value;
+
             return obj;
         },
 
@@ -156,22 +148,22 @@ var joint = {
 
             delim = delim || '/';
 
-            // index of the last delimiter
-            var i = path.lastIndexOf(delim);
+            var pathArray = _.isArray(path) ? path.slice() : path.split(delim);
 
-            if (i > -1) {
+            var propertyToRemove = pathArray.pop();
+            if (pathArray.length > 0) {
 
                 // unsetting a nested attribute
-                var parent = joint.util.getByPath(obj, path.substr(0, i), delim);
+                var parent = joint.util.getByPath(obj, pathArray, delim);
 
                 if (parent) {
-                    delete parent[path.slice(i + 1)];
+                    delete parent[propertyToRemove];
                 }
 
             } else {
 
                 // unsetting a primitive attribute
-                delete obj[path];
+                delete obj[propertyToRemove];
             }
 
             return obj;
@@ -226,6 +218,11 @@ var joint = {
             this.guid.id = this.guid.id || 1;
             obj.id = (obj.id === undefined ? 'j_' + this.guid.id++ : obj.id);
             return obj.id;
+        },
+
+        toKebabCase: function(string) {
+
+            return string.replace(/[A-Z]/g, '-$&').toLowerCase();
         },
 
         // Copy all the properties to the first argument from the following arguments.
@@ -371,6 +368,29 @@ var joint = {
             return spot || bbox.center();
         },
 
+        parseCssNumeric: function(strValue, restrictUnits) {
+
+            restrictUnits = restrictUnits || [];
+            var cssNumeric = { value: parseFloat(strValue) };
+
+            if (_.isNaN(cssNumeric.value)) {
+                return null;
+            }
+
+            var validUnitsExp = restrictUnits.join('|');
+
+            if (_.isString(strValue)) {
+                var matches = new RegExp('(\\d+)(' + validUnitsExp + ')$').exec(strValue);
+                if (!matches) {
+                    return null;
+                }
+                if (matches[2]) {
+                    cssNumeric.unit = matches[2];
+                }
+            }
+            return cssNumeric;
+        },
+
         breakText: function(text, size, styles, opt) {
 
             opt = opt || {};
@@ -406,6 +426,7 @@ var joint = {
             var full = [];
             var lines = [];
             var p;
+            var lineHeight;
 
             for (var i = 0, l = 0, len = words.length; i < len; i++) {
 
@@ -493,16 +514,29 @@ var joint = {
 
                 // if size.height is defined we have to check whether the height of the entire
                 // text exceeds the rect height
-                if (typeof height !== 'undefined') {
+                if (height !== undefined) {
 
-                    // get line height as text height / 0.8 (as text height is approx. 0.8em
-                    // and line height is 1em. See vectorizer.text())
-                    var lh = lh || textElement.getBBox().height * 1.25;
+                    if (lineHeight === undefined) {
 
-                    if (lh * lines.length > height) {
+                        var heightValue;
+
+                        // use the same defaults as in V.prototype.text
+                        if (styles.lineHeight === 'auto') {
+                            heightValue = { value: 1.5, unit: 'em' };
+                        } else {
+                            heightValue = joint.util.parseCssNumeric(styles.lineHeight, ['em']) || { value: 1, unit: 'em' };
+                        }
+
+                        lineHeight = heightValue.value;
+                        if (heightValue.unit === 'em' ) {
+                            lineHeight *= textElement.getBBox().height;
+                        }
+                    }
+
+                    if (lineHeight * lines.length > height) {
 
                         // remove overflowing lines
-                        lines.splice(Math.floor(height / lh));
+                        lines.splice(Math.floor(height / lineHeight));
 
                         break;
                     }
@@ -614,33 +648,34 @@ var joint = {
         getElementBBox: function(el) {
 
             var $el = $(el);
-            var offset = $el.offset();
-            var bbox;
-
-            if (el.ownerSVGElement) {
-
-                // Use Vectorizer to get the dimensions of the element if it is an SVG element.
-                bbox = V(el).bbox();
-
-                // getBoundingClientRect() used in jQuery.fn.offset() takes into account `stroke-width`
-                // in Firefox only. So clientRect width/height and getBBox width/height in FF don't match.
-                // To unify this across all browsers we add the `stroke-width` (left & top) back to
-                // the calculated offset.
-                var crect = el.getBoundingClientRect();
-                var strokeWidthX = (crect.width - bbox.width) / 2;
-                var strokeWidthY = (crect.height - bbox.height) / 2;
-
-                // The `bbox()` returns coordinates relative to the SVG viewport, therefore, use the
-                // ones returned from the `offset()` method that are relative to the document.
-                bbox.x = offset.left + strokeWidthX;
-                bbox.y = offset.top + strokeWidthY;
-
-            } else {
-
-                bbox = { x: offset.left, y: offset.top, width: $el.outerWidth(), height: $el.outerHeight() };
+            if ($el.length === 0) {
+                throw new Error('Element not found')
             }
 
-            return bbox;
+            var element = $el[0];
+            var doc = element.ownerDocument;
+            var clientBBox = element.getBoundingClientRect();
+
+            var strokeWidthX = 0;
+            var strokeWidthY = 0;
+
+            // Firefox correction
+            if (element.ownerSVGElement) {
+
+                var bbox = V(element).bbox();
+
+                // if FF getBoundingClientRect includes stroke-width, getBBox doesn't.
+                // To unify this across all browsers we need to adjust the final bBox with `stroke-width` value.
+                strokeWidthX = (clientBBox.width - bbox.width);
+                strokeWidthY = (clientBBox.height - bbox.height);
+            }
+
+            return  {
+                x: clientBBox.left + window.pageXOffset - doc.documentElement.offsetLeft + strokeWidthX / 2,
+                y: clientBBox.top + window.pageYOffset - doc.documentElement.offsetTop + strokeWidthY / 2,
+                width: clientBBox.width - strokeWidthX,
+                height: clientBBox.height - strokeWidthY
+            };
         },
 
 
@@ -1282,10 +1317,12 @@ var joint = {
                 }
             }
 
-            if (prefixedResult(document, 'FullScreen') || prefixedResult(document, 'IsFullScreen')) {
-                prefixedResult(document, 'CancelFullScreen');
+            if (prefixedResult(document, 'FullscreenElement') || prefixedResult(document, 'FullScreenElement')) {
+                prefixedResult(document, 'ExitFullscreen') || // Spec.
+                prefixedResult(document, 'CancelFullScreen'); // Firefox
             } else {
-                prefixedResult(el, 'RequestFullScreen');
+                prefixedResult(el, 'RequestFullscreen') || // Spec.
+                prefixedResult(el, 'RequestFullScreen'); // Firefox
             }
         },
 
@@ -1348,6 +1385,7 @@ var joint = {
                     fn([cell, cell, cell]);
                     fn(cell, cell, cell, opt);
                     fn(cell, cell, cell);
+                    fn(cell);
             */
             cells: function(fn) {
 
@@ -1361,10 +1399,13 @@ var joint = {
 
                         if (opt instanceof joint.dia.Cell) {
                             cells = args;
-                            opt = {};
-                        } else {
-                            cells = _.initial(args);
+                        } else if (cells instanceof joint.dia.Cell) {
+                            cells = args.length > 1 ? _.initial(args) : args;
                         }
+                    }
+
+                    if (opt instanceof joint.dia.Cell) {
+                        opt = {};
                     }
 
                     return fn.call(this, cells, opt);
