@@ -44,7 +44,7 @@ export namespace g {
         a: number;
         b: number;
 
-        constructor(c, a, b);
+        constructor(center: Ellipse | Point, a: number, b: number);
 
         bbox(): Rect;
 
@@ -93,6 +93,12 @@ export namespace g {
         squaredLength(): number;
 
         toString(): string;
+
+        vector(): Point;
+
+        closestPoint(p: dia.Point | Point): Point;
+
+        closestPointNormalizedLength(p: dia.Point | Point): number;
     }
 
     class Point {
@@ -116,6 +122,8 @@ export namespace g {
         difference(dx: dia.Point | Point | number, dy?: number): Point;
 
         distance(p: string | dia.Point | Point): number;
+
+        squaredDistance(p: dia.Point | Point): number;
 
         equals(p: Point): boolean;
 
@@ -148,6 +156,8 @@ export namespace g {
         toString(): string;
 
         update(x: number, y: number): this;
+
+        dot(p: dia.Point | Point): number;
     }
 
     class Rect {
@@ -158,7 +168,7 @@ export namespace g {
         width: number;
         height: number;
 
-        constructor(x?: number | dia.BBox, y?: number, w?: number, h?: number);
+        constructor(x?: number | dia.BBox, y?: number, width?: number, height?: number);
 
         bbox(angle: number): Rect;
 
@@ -235,6 +245,6 @@ export namespace g {
     function point(xy: string): Point;
     function point(point: dia.Point): Point;
 
-    function rect(x: number, y: number, w: number, h: number): Rect;
+    function rect(x: number, y: number, width: number, height: number): Rect;
     function rect(rect: dia.BBox): Rect;
 }
