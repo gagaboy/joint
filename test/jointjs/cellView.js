@@ -430,5 +430,97 @@ QUnit.module('cellView', function(hooks) {
                 assert.equal(rect.attr('transform'), 'matrix(1,0,0,1,20,0)', 'inline attribute is disregarder');
             });
         });
+
+        QUnit.module('Text', function(hooks) {
+
+            hooks.beforeEach(function() {
+                cell.set('markup', '<rect/><text/>');
+            });
+
+            QUnit.test('attribute "x"', function(assert) {
+
+                var X = 23;
+
+                function testTextOffset(offset) {
+                    var text = cellView.vel.findOne('text');
+                    var tspans = text.find('tspan');
+                    tspans.forEach(function(tspan) {
+                        assert.equal(tspan.bbox(false, cellView.el).x, offset, 'Offset of "' + tspan.node.textContent + '""');
+                    });
+                }
+
+                assert.expect(6);
+
+                cell.attr({ text: { refX: null, x: X, text: 'single line - no refX and with x' }}, { dirty: true});
+                testTextOffset(X);
+
+                cell.attr({ text: { refX: X, x: X, text: 'single line - with refX and x' }}, { dirty: true});
+                testTextOffset(X + X);
+
+                cell.attr({ text: { refX: null, x: X, text: '1. line - no refX and with x\n2. line - no refX and with x' }}, { dirty: true});
+                testTextOffset(X);
+
+                cell.attr({ text: { refX: X, x: X, text: '1. line - with refX and x\n2. line - with refX and x' }}, { dirty: true});
+                testTextOffset(X + X);
+            });
+        });
+
+        QUnit.module('Event', function(hooks) {
+
+            hooks.beforeEach(function() {
+                cell.set('markup', '<g class="ab"><rect class="a"/><rect class="b"/></g><rect class="c"/>');
+            });
+
+            QUnit.test('sanity', function(assert) {
+                var paperSpy = sinon.spy();
+                var cellViewSpy = sinon.spy();
+                cell.attr('.ab/event', 'test-event');
+                paper.on('test-event', paperSpy);
+                cellView.on('test-event', cellViewSpy);
+                // Event should be triggered
+                simulate.mousedown({ el: cellView.el.querySelector('.ab') });
+                simulate.mouseup({ el: cellView.el.querySelector('.ab') });
+                simulate.mousedown({ el: cellView.el.querySelector('.a') });
+                simulate.mouseup({ el: cellView.el.querySelector('.a') });
+                simulate.mousedown({ el: cellView.el.querySelector('.b') });
+                simulate.mouseup({ el: cellView.el.querySelector('.b') });
+                assert.equal(paperSpy.callCount, 3);
+                assert.equal(cellViewSpy.callCount, 3);
+                assert.ok(paperSpy.alwaysCalledWith(
+                    cellView,
+                    sinon.match.instanceOf($.Event),
+                    sinon.match.number,
+                    sinon.match.number
+                ));
+                assert.ok(cellViewSpy.alwaysCalledWith(
+                    sinon.match.instanceOf($.Event),
+                    sinon.match.number,
+                    sinon.match.number
+                ));
+                // Event should not be triggered
+                paperSpy.reset();
+                cellViewSpy.reset();
+                simulate.mousedown({ el: cellView.el.querySelector('.c') });
+                assert.notOk(paperSpy.called);
+                assert.notOk(cellViewSpy.called);
+            });
+        });
+
+        QUnit.module('resetOffset', function(hooks) {
+
+            hooks.beforeEach(function() {
+                cell.set('markup', 'path');
+            });
+
+            QUnit.test('sanity', function(assert) {
+                cell.attr('path/d', 'M 10 10 20 20');
+                assert.equal(cellView.getBBox().toString(), '10@10 20@20');
+                cell.attr('path/resetOffset', true);
+                assert.equal(cellView.getBBox().toString(), '0@0 10@10');
+                cell.attr('path/resetOffset', false);
+                assert.equal(cellView.getBBox().toString(), '10@10 20@20');
+            });
+        });
+
     });
 });

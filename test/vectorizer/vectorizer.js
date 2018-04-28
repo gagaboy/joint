@@ -14,6 +14,8 @@ QUnit.module('vectorizer', function(hooks) {
     var svgGroup1;
     var svgGroup2;
     var svgGroup3;
+    var svgPath2;
+    var svgPath3;
 
     var childrenTagNames = function(vel) {
         var tagNames = [];
@@ -37,9 +39,11 @@ QUnit.module('vectorizer', function(hooks) {
                 '<g id="svg-group-1" class="group-1">' +
                     '<g id="svg-group-2" class="group-2">' +
                         '<g id="svg-group-3" class="group3">' +
+                            '<path id="svg-path-2" d="M 100 100 C 100 100 0 150 100 200 Z"/>' +
                         '</g>' +
                     '</g>' +
-                '</g>';
+                '</g>' +
+                '<path id="svg-path-3"/>';
 
         $fixture.append(V('svg', { id: 'svg-container' }, V(svgContent)).node);
 
@@ -54,6 +58,8 @@ QUnit.module('vectorizer', function(hooks) {
         svgGroup1 = document.getElementById('svg-group-1');
         svgGroup2 = document.getElementById('svg-group-2');
         svgGroup3 = document.getElementById('svg-group-3');
+        svgPath2 = document.getElementById('svg-path-2');
+        svgPath3 = document.getElementById('svg-path-3');
     });
 
     function serializeNode(node) {
@@ -69,6 +75,14 @@ QUnit.module('vectorizer', function(hooks) {
         assert.ok(vRect.node instanceof SVGElement, 'The vectorizer element has the attribute "node" that references to an SVGElement.');
         assert.ok(V.isVElement(V(vRect)), 'Constructor produces a vectorizer element, when a vectorizer element was provided.');
         assert.ok(V(vRect).node instanceof SVGElement, 'The vectorizer element has again the attribute "node" that references to an SVGElement.');
+    });
+
+    QUnit.test('id', function(assert) {
+        var vRect = V('rect');
+        assert.ok(vRect.id);
+        assert.equal(vRect.id, vRect.node.id);
+        vRect.id = 'newid';
+        assert.equal(vRect.node.id, 'newid');
     });
 
     QUnit.test('V(\'<invalid markup>\')', function(assert) {
@@ -122,58 +136,186 @@ QUnit.module('vectorizer', function(hooks) {
         assert.equal(V(svgCircle).index(), 1, 'The second node in the group has index 1.');
     });
 
-    QUnit.test('text', function(assert) {
+    QUnit.module('tagName()', function() {
 
-        var svg = V('svg');
-        svg.attr('width', 600);
-        svg.attr('height', 800);
-        $fixture.append(svg.node);
+        QUnit.test('sanity', function(assert) {
 
-        var t = V('text', { x: 250, dy: 100, fill: 'black' });
-        t.text('abc');
+            assert.equal(typeof V(svgContainer).tagName(), 'string');
+            assert.equal(typeof V(svgPath).tagName(), 'string');
+            assert.equal(typeof V(svgGroup).tagName(), 'string');
+            assert.equal(typeof V(svgCircle).tagName(), 'string');
+            assert.equal(typeof V(svgEllipse).tagName(), 'string');
+            assert.equal(typeof V(svgPolygon).tagName(), 'string');
+            assert.equal(typeof V(svgText).tagName(), 'string');
+            assert.equal(typeof V(svgRectangle).tagName(), 'string');
+            assert.equal(typeof V(svgGroup1).tagName(), 'string');
+            assert.equal(typeof V(svgGroup2).tagName(), 'string');
+            assert.equal(typeof V(svgGroup3).tagName(), 'string');
+            assert.equal(typeof V(svgPath2).tagName(), 'string');
+            assert.equal(typeof V(svgPath3).tagName(), 'string');
+        });
 
-        assert.equal(t.node.childNodes.length, 1, 'There is only one child node which is a v-line node.');
-        assert.equal(t.node.childNodes[0].childNodes.length, 1, 'There is only one child of that v-line node which is a text node.');
-        assert.equal(serializeNode(t.node.childNodes[0].childNodes[0]), 'abc', 'Generated text is ok for a single line and no annotations.');
-        assert.equal(t.attr('fill'), 'black', 'fill attribute set');
-        assert.equal(t.attr('x'), '250', 'x attribute set');
-        assert.equal(t.attr('dy'), '100', 'dy attribute set');
+        QUnit.test('correctness', function(assert) {
 
-        t.text('abc\ndef');
+            assert.equal(V(svgContainer).tagName(), 'SVG');
+            assert.equal(V(svgPath).tagName(), 'PATH');
+            assert.equal(V(svgGroup).tagName(), 'G');
+            assert.equal(V(svgCircle).tagName(), 'CIRCLE');
+            assert.equal(V(svgEllipse).tagName(), 'ELLIPSE');
+            assert.equal(V(svgPolygon).tagName(), 'POLYGON');
+            assert.equal(V(svgText).tagName(), 'TEXT');
+            assert.equal(V(svgRectangle).tagName(), 'RECT');
+            assert.equal(V(svgGroup1).tagName(), 'G');
+            assert.equal(V(svgGroup2).tagName(), 'G');
+            assert.equal(V(svgGroup3).tagName(), 'G');
+            assert.equal(V(svgPath2).tagName(), 'PATH');
+            assert.equal(V(svgPath3).tagName(), 'PATH');
+        });
+    });
 
-        assert.equal(t.node.childNodes.length, 2, 'There are two child nodes one for each line.');
 
-        t.text('abcdefgh', { annotations: [
-            { start: 1, end: 3, attrs: { fill: 'red', stroke: 'orange' } },
-            { start: 2, end: 5, attrs: { fill: 'blue' } }
-        ] });
+    QUnit.module('text', function() {
 
-        assert.equal(t.find('.v-line').length, 1, 'One .v-line element rendered');
+        var getSvg = function() {
+            var svg = V('svg');
+            svg.attr('width', 600);
+            svg.attr('height', 800);
+            $fixture.append(svg.node);
 
-        assert.equal(t.find('tspan').length, 4, '4 tspans rendered in total');
+            return svg;
+        };
 
-        t.text('abcd\nefgh', { annotations: [
-            { start: 1, end: 3, attrs: { fill: 'red', stroke: 'orange' } },
-            { start: 2, end: 5, attrs: { fill: 'blue' } }
-        ] });
+        QUnit.test('single line, styles, position', function(assert) {
 
-        assert.equal(t.find('.v-line').length, 2, 'Two .v-line elements rendered');
-        assert.equal(t.find('tspan').length, 5, '5 tspans rendered in total');
+            var svg = getSvg();
+            var t = V('text', { x: 250, dy: 100, fill: 'black' });
 
-        t.text('abcdefgh', { includeAnnotationIndices: true, annotations: [
-            { start: 1, end: 3, attrs: { fill: 'red', stroke: 'orange' } },
-            { start: 2, end: 5, attrs: { fill: 'blue' } }
-        ] });
-        assert.equal(V(t.find('tspan')[1]).attr('annotations'), '0', 'annotation indices added as an attribute');
-        assert.equal(V(t.find('tspan')[2]).attr('annotations'), '0,1', 'annotation indices added as an attribute');
-        assert.equal(V(t.find('tspan')[3]).attr('annotations'), '1', 'annotation indices added as an attribute');
+            t.text('abc');
 
-        t.text('');
-        assert.equal(t.attr('display'), 'none');
-        t.text('text');
-        assert.equal(t.attr('display'), null);
+            assert.equal(t.node.childNodes.length, 1, 'There is only one child node which is a v-line node.');
+            assert.equal(t.node.childNodes[0].childNodes.length, 1, 'There is only one child of that v-line node which is a text node.');
+            assert.equal(serializeNode(t.node.childNodes[0].childNodes[0]), 'abc', 'Generated text is ok for a single line and no annotations.');
+            assert.equal(t.attr('fill'), 'black', 'fill attribute set');
+            assert.equal(t.attr('x'), '250', 'x attribute set');
+            assert.equal(t.attr('dy'), '100', 'dy attribute set');
 
-        svg.remove();
+            svg.remove();
+        });
+
+        QUnit.test('multi-line and annotations', function(assert) {
+
+            var svg = getSvg();
+            var t = V('text', { x: 250, dy: 100, fill: 'black' });
+
+            t.text('abc\ndef');
+
+            assert.equal(t.node.childNodes.length, 2, 'There are two child nodes one for each line.');
+
+            t.text('abcdefgh', {
+                annotations: [
+                    { start: 1, end: 3, attrs: { fill: 'red', stroke: 'orange' } },
+                    { start: 2, end: 5, attrs: { fill: 'blue' } }
+                ]
+            });
+
+            assert.equal(t.find('.v-line').length, 1, 'One .v-line element rendered');
+
+            assert.equal(t.find('tspan').length, 4, '4 tspans rendered in total');
+
+            t.text('abcd\nefgh', {
+                annotations: [
+                    { start: 1, end: 3, attrs: { fill: 'red', stroke: 'orange' } },
+                    { start: 2, end: 5, attrs: { fill: 'blue' } }
+                ]
+            });
+
+            assert.equal(t.find('.v-line').length, 2, 'Two .v-line elements rendered');
+            assert.equal(t.find('tspan').length, 5, '5 tspans rendered in total');
+
+            svg.remove();
+        });
+
+        QUnit.test('custom EOL', function(assert) {
+
+            var svg = getSvg();
+            var t = V('text', { x: 250, dy: 100, fill: 'black' });
+
+            t.text('abc\ndef', { eol: 'X' });
+
+            assert.equal(t.node.childNodes[0].textContent, 'abcX');
+            assert.equal(t.node.childNodes[1].textContent, 'def');
+
+            t.text('abc\ndef\n', { eol: 'X' });
+
+            assert.equal(t.node.childNodes[0].textContent, 'abcX');
+            assert.equal(t.node.childNodes[1].textContent, 'defX');
+            svg.remove();
+        });
+
+        QUnit.test('includeAnnotationIndices', function(assert) {
+
+            var svg = getSvg();
+            var t = V('text', { x: 250, dy: 100, fill: 'black' });
+
+            t.text('abcdefgh', {
+                includeAnnotationIndices: true, annotations: [
+                    { start: 1, end: 3, attrs: { fill: 'red', stroke: 'orange' } },
+                    { start: 2, end: 5, attrs: { fill: 'blue' } }
+                ]
+            });
+            assert.equal(V(t.find('tspan')[1]).attr('annotations'), '0', 'annotation indices added as an attribute');
+            assert.equal(V(t.find('tspan')[2]).attr('annotations'), '0,1', 'annotation indices added as an attribute');
+            assert.equal(V(t.find('tspan')[3]).attr('annotations'), '1', 'annotation indices added as an attribute');
+
+            t.text('');
+            assert.equal(t.attr('display'), 'none');
+            t.text('text');
+            assert.equal(t.attr('display'), null);
+
+            svg.remove();
+        });
+
+        QUnit.test('visibility', function(assert) {
+
+            var svg = getSvg();
+            var t = V('text', { x: 250, dy: 100, fill: 'black' });
+
+            t.text('');
+            assert.equal(t.attr('display'), 'none');
+            t.text('text');
+            assert.equal(t.attr('display'), null);
+
+            svg.remove();
+        });
+
+        QUnit.test('textVerticalAnchor', function(assert) {
+
+            var texts = ['one', 'one\ntwo', 'one\ntwo\nthree'];
+            var n = texts.length;
+            var fontSize = 30;
+
+            assert.expect(3 * n);
+
+            var svg = getSvg();
+            var t = V('text', { 'font-size': fontSize }).appendTo(svg);
+            for (var i = 0; i < n; i++) {
+                var text = texts[i];
+                var bbox;
+                // 'bottom'
+                t.text(text, { textVerticalAnchor: 'bottom' });
+                bbox = t.getBBox();
+                assert.ok(Math.abs(bbox.corner().y) < (fontSize * 0.2), 'bottom anchor: ' + text);
+                // 'top'
+                t.text(text, { textVerticalAnchor: 'top' });
+                bbox = t.getBBox();
+                assert.ok(Math.abs(bbox.origin().y) < (fontSize * 0.2), 'top anchor: ' + text);
+                // 'middle'
+                t.text(text, { textVerticalAnchor: 'middle' });
+                bbox = t.getBBox();
+                assert.ok(Math.abs(bbox.center().y) < (fontSize * 0.2), 'middle anchor: ' + text);
+            }
+            svg.remove();
+        });
     });
 
     QUnit.test('annotateString', function(assert) {
@@ -247,9 +389,52 @@ QUnit.module('vectorizer', function(hooks) {
 
         var found = V(svgContainer).find('circle');
 
-        assert.ok(Array.isArray(found), 'The result is an array.');
-        assert.ok(found.length, 'The array is not empty.');
-        assert.ok(found.reduce(function(memo, vel) { return memo && V.isVElement(vel); }, true), 'Items in the array are wrapped in Vectorizer.');
+        assert.ok(Array.isArray(found), 'The result should be an array.');
+        assert.ok(found.length > 0, 'The array should not be empty.');
+        assert.ok(found.reduce(function(memo, vel) { return memo && V.isVElement(vel); }, true), 'Items in the array should be wrapped in Vectorizer.');
+    });
+
+    QUnit.test('children()', function(assert) {
+
+        var checkChildren = svgGroup.childNodes;
+        assert.ok(checkChildren.length > 0, 'The checkChildren collection should not be empty.');
+        assert.ok(checkChildren.length === 2, 'The checkChildren collection should have two elements.');
+
+        var children = V(svgGroup).children();
+        assert.ok(Array.isArray(children), 'The result should be an array.');
+        assert.ok(children.length > 0, 'The array should not be empty.');
+        assert.ok(children.length === 2, 'The array should have two elements.');
+        assert.ok(children.reduce(function(memo, vel) { return memo && V.isVElement(vel); }, true), 'Items in the array should be wrapped in Vectorizer.');
+
+        var textNode = document.createTextNode('Text node');
+        svgGroup.appendChild(textNode);
+        var comment = document.createComment('Comment');
+        svgGroup.appendChild(comment);
+        var attribute = document.createAttribute('Attribute');
+        attribute.value = 'Hello World';
+        svgGroup.setAttributeNode(attribute);
+
+        var checkChildren2 = svgGroup.childNodes;
+        assert.ok(checkChildren2.length > 0, 'The checkChildren2 collection should not be empty.');
+        assert.ok(checkChildren2.length === 4, 'The checkChildren2 collection should have four child nodes.');
+        var numElements = 0;
+        for (var i = 0; i < checkChildren2.length; i++) {
+            var currentChild = checkChildren2[i];
+            if (currentChild.nodeType === 1) {
+                numElements += 1;
+            }
+        }
+        assert.ok(numElements === 2, 'The checkChildren2 collection should have two child elements.');
+
+        var children2 = V(svgGroup).children();
+        assert.ok(Array.isArray(children2), 'The result should be an array.');
+        assert.ok(children2.length > 0, 'The array should not be empty.');
+        assert.ok(children2.length === 2, 'The array should have two child elements.');
+        assert.ok(children2.reduce(function(memo, vel) { return memo && V.isVElement(vel); }, true), 'Items in the array should be wrapped in Vectorizer.');
+
+        var emptyChildren = V(svgCircle).children();
+        assert.ok(Array.isArray(emptyChildren), 'The result should be an array.');
+        assert.ok(emptyChildren.length === 0, 'The array should be empty.');
     });
 
     QUnit.test('V.transformPoint', function(assert) {
@@ -889,6 +1074,180 @@ QUnit.module('vectorizer', function(hooks) {
             assert.ok(V(svgCircle).bbox(true) instanceof g.Rect);
             assert.ok(V(svgCircle).bbox(false, svgGroup) instanceof g.Rect);
             assert.ok(V('circle', { class: 'not-in-dom' }).bbox() instanceof g.Rect);
+        });
+    });
+
+    QUnit.module('getBBox()', function() {
+
+        QUnit.test('sanity', function(assert) {
+            assert.ok(V(svgCircle).getBBox() instanceof g.Rect);
+            assert.ok(V(svgCircle).getBBox({}) instanceof g.Rect);
+            assert.ok(V(svgCircle).getBBox({ recursive: true }) instanceof g.Rect);
+            assert.ok(V(svgCircle).getBBox({ target: svgCircle }) instanceof g.Rect);
+            assert.ok(V(svgCircle).getBBox({ target: svgCircle, recursive: true }) instanceof g.Rect);
+            assert.ok(V(svgCircle).getBBox({ target: svgContainer }) instanceof g.Rect);
+            assert.ok(V(svgCircle).getBBox({ target: svgContainer, recursive: true }) instanceof g.Rect);
+            assert.ok(V('circle', { class: 'not-in-dom' }).getBBox() instanceof g.Rect);
+            assert.ok(V('circle', { class: 'not-in-dom' }).getBBox({}) instanceof g.Rect);
+            assert.ok(V('circle', { class: 'not-in-dom' }).getBBox({ recursive: true }) instanceof g.Rect);
+            assert.ok(V('circle', { class: 'not-in-dom' }).getBBox({ target: svgCircle }) instanceof g.Rect);
+            assert.ok(V('circle', { class: 'not-in-dom' }).getBBox({ target: svgCircle, recursive: true }) instanceof g.Rect);
+            assert.ok(V('circle', { class: 'not-in-dom' }).getBBox({ target: svgContainer }) instanceof g.Rect);
+            assert.ok(V('circle', { class: 'not-in-dom' }).getBBox({ target: svgContainer, recursive: true }) instanceof g.Rect);
+        });
+
+        QUnit.test('recursive', function(assert) {
+            assert.equal(V(svgGroup3).getBBox({ recursive: true }).toString(), V(svgPath2).getBBox().toString());
+            assert.equal(V(svgGroup3).getBBox({ recursive: true }).toString(), V(svgPath2).getBBox({ recursive: true }).toString());
+            assert.equal(V(svgGroup3).getBBox({ target: svgGroup1, recursive: true }).toString(), V(svgPath2).getBBox({ target: svgGroup1 }).toString());
+            assert.equal(V(svgGroup3).getBBox({ target: svgGroup1, recursive: true }).toString(), V(svgPath2).getBBox({ target: svgGroup1, recursive: true }).toString());
+        });
+    });
+
+    QUnit.module('normalizePath()', function() {
+
+        QUnit.test('sanity', function(assert) {
+
+            assert.ok(V(svgPath).normalizePath() instanceof V);
+            assert.ok(V(svgPath2).normalizePath() instanceof V);
+            assert.ok(V(svgPath3).normalizePath() instanceof V);
+
+            assert.ok(V(svgContainer).normalizePath() instanceof V);
+            assert.ok(V(svgGroup).normalizePath() instanceof V);
+            assert.ok(V(svgCircle).normalizePath() instanceof V);
+            assert.ok(V(svgEllipse).normalizePath() instanceof V);
+            assert.ok(V(svgPolygon).normalizePath() instanceof V);
+            assert.ok(V(svgText).normalizePath() instanceof V);
+            assert.ok(V(svgRectangle).normalizePath() instanceof V);
+            assert.ok(V(svgGroup1).normalizePath() instanceof V);
+            assert.ok(V(svgGroup2).normalizePath() instanceof V);
+            assert.ok(V(svgGroup3).normalizePath() instanceof V);
+        });
+
+        QUnit.test('normalizations', function(assert) {
+
+            assert.equal(V(svgPath).normalizePath().node.hasAttribute('d'), true);
+            assert.equal(V(svgPath2).normalizePath().node.hasAttribute('d'), true);
+            assert.equal(V(svgPath3).normalizePath().node.hasAttribute('d'), true);
+
+            assert.equal(V(svgPath).normalizePath().attr('d'), 'M 10 10');
+            assert.equal(V(svgPath2).normalizePath().attr('d'), 'M 100 100 C 100 100 0 150 100 200 Z');
+            assert.equal(V(svgPath3).normalizePath().attr('d'), 'M 0 0');
+        });
+
+        QUnit.test('silent failures', function(assert) {
+
+            assert.equal(V(svgContainer).normalizePath().node.hasAttribute('d'), false);
+            assert.equal(V(svgGroup).normalizePath().node.hasAttribute('d'), false);
+            assert.equal(V(svgCircle).normalizePath().node.hasAttribute('d'), false);
+            assert.equal(V(svgEllipse).normalizePath().node.hasAttribute('d'), false);
+            assert.equal(V(svgPolygon).normalizePath().node.hasAttribute('d'), false);
+            assert.equal(V(svgText).normalizePath().node.hasAttribute('d'), false);
+            assert.equal(V(svgRectangle).normalizePath().node.hasAttribute('d'), false);
+            assert.equal(V(svgGroup1).normalizePath().node.hasAttribute('d'), false);
+            assert.equal(V(svgGroup2).normalizePath().node.hasAttribute('d'), false);
+            assert.equal(V(svgGroup3).normalizePath().node.hasAttribute('d'), false);
+        });
+    });
+
+    QUnit.module('normalizePathData()', function() {
+
+        QUnit.test('sanity', function(assert) {
+
+            // normalizations
+            assert.equal(typeof V.normalizePathData('M 10 10 H 20'), 'string');
+            assert.equal(typeof V.normalizePathData('M 10 10 V 20'), 'string');
+            assert.equal(typeof V.normalizePathData('M 10 20 C 10 10 25 10 25 20 S 40 30 40 20'), 'string');
+            assert.equal(typeof V.normalizePathData('M 20 20 Q 40 0 60 20'), 'string');
+            assert.equal(typeof V.normalizePathData('M 20 20 Q 40 0 60 20 T 100 20'), 'string');
+            assert.equal(typeof V.normalizePathData('M 30 15 A 15 15 0 0 0 15 30'), 'string');
+
+            assert.equal(typeof V.normalizePathData('m 10 10'), 'string');
+            assert.equal(typeof V.normalizePathData('M 10 10 m 10 10'), 'string');
+            assert.equal(typeof V.normalizePathData('M 10 10 l 10 10'), 'string');
+            assert.equal(typeof V.normalizePathData('M 10 10 c 0 10 10 10 10 0'), 'string');
+            assert.equal(typeof V.normalizePathData('M 10 10 z'), 'string');
+
+            assert.equal(typeof V.normalizePathData('M 10 10 20 20'), 'string');
+            assert.equal(typeof V.normalizePathData('M 10 10 L 20 20 30 30'), 'string');
+            assert.equal(typeof V.normalizePathData('M 10 10 C 10 20 20 20 20 10 20 0 30 0 30 10'), 'string');
+
+            // edge cases
+            assert.equal(typeof V.normalizePathData('L 10 10'), 'string');
+            assert.equal(typeof V.normalizePathData('C 0 10 10 10 10 0'), 'string');
+            assert.equal(typeof V.normalizePathData('Z'), 'string');
+
+            assert.equal(typeof V.normalizePathData('M 10 10 Z L 20 20'), 'string');
+            assert.equal(typeof V.normalizePathData('M 10 10 Z C 10 20 20 20 20 10'), 'string');
+            assert.equal(typeof V.normalizePathData('M 10 10 Z Z'), 'string');
+
+            assert.equal(typeof V.normalizePathData(''), 'string');
+            assert.equal(typeof V.normalizePathData('X'), 'string');
+
+            assert.equal(typeof V.normalizePathData('M'), 'string');
+            assert.equal(typeof V.normalizePathData('M 10'), 'string');
+            assert.equal(typeof V.normalizePathData('M 10 10 20'), 'string');
+
+            assert.equal(typeof V.normalizePathData('X M 10 10'), 'string');
+            assert.equal(typeof V.normalizePathData('X M 10 10 X L 20 20'), 'string');
+        });
+
+        QUnit.test('normalizations', function(assert) {
+
+            assert.equal(V.normalizePathData('M 10 10 H 20'), 'M 10 10 L 20 10');
+            assert.equal(V.normalizePathData('M 10 10 V 20'), 'M 10 10 L 10 20');
+            assert.equal(V.normalizePathData('M 10 20 C 10 10 25 10 25 20 S 40 30 40 20'), 'M 10 20 C 10 10 25 10 25 20 C 25 30 40 30 40 20');
+            assert.equal(V.normalizePathData('M 20 20 Q 40 0 60 20'), 'M 20 20 C 33.33333333333333 6.666666666666666 46.666666666666664 6.666666666666666 60 20');
+            assert.equal(V.normalizePathData('M 20 20 Q 40 0 60 20 T 100 20'), 'M 20 20 C 33.33333333333333 6.666666666666666 46.666666666666664 6.666666666666666 60 20 C 73.33333333333333 33.33333333333333 86.66666666666666 33.33333333333333 100 20');
+            assert.equal(V.normalizePathData('M 30 15 A 15 15 0 0 0 15 30'), 'M 30 15 C 21.715728752538098 15.000000000000002 14.999999999999998 21.715728752538098 15 30');
+
+            assert.equal(V.normalizePathData('m 10 10'), 'M 10 10');
+            assert.equal(V.normalizePathData('M 10 10 m 10 10'), 'M 10 10 M 20 20');
+            assert.equal(V.normalizePathData('M 10 10 l 10 10'), 'M 10 10 L 20 20');
+            assert.equal(V.normalizePathData('M 10 10 c 0 10 10 10 10 0'), 'M 10 10 C 10 20 20 20 20 10');
+            assert.equal(V.normalizePathData('M 10 10 z'), 'M 10 10 Z');
+
+            assert.equal(V.normalizePathData('M 10 10 20 20'), 'M 10 10 L 20 20');
+            assert.equal(V.normalizePathData('M 10 10 L 20 20 30 30'), 'M 10 10 L 20 20 L 30 30');
+            assert.equal(V.normalizePathData('M 10 10 C 10 20 20 20 20 10 20 0 30 0 30 10'), 'M 10 10 C 10 20 20 20 20 10 C 20 0 30 0 30 10');
+        });
+
+        QUnit.test('edge cases', function(assert) {
+
+            assert.equal(V.normalizePathData('L 10 10'), 'M 0 0 L 10 10');
+            assert.equal(V.normalizePathData('C 10 20 20 20 20 10'), 'M 0 0 C 10 20 20 20 20 10');
+            assert.equal(V.normalizePathData('Z'), 'M 0 0 Z');
+
+            assert.equal(V.normalizePathData('M 10 10 Z L 20 20'), 'M 10 10 Z L 20 20');
+            assert.equal(V.normalizePathData('M 10 10 Z C 10 20 20 20 20 10'), 'M 10 10 Z C 10 20 20 20 20 10');
+            assert.equal(V.normalizePathData('M 10 10 Z Z'), 'M 10 10 Z Z');
+
+            assert.equal(V.normalizePathData(''), 'M 0 0'); // empty string
+            assert.equal(V.normalizePathData('X'), 'M 0 0'); // invalid command
+
+            assert.equal(V.normalizePathData('M'), 'M 0 0'); // no arguments for a command that needs them
+            assert.equal(V.normalizePathData('M 10'), 'M 0 0'); // too few arguments
+            assert.equal(V.normalizePathData('M 10 10 20'), 'M 10 10'); // too many arguments
+
+            assert.equal(V.normalizePathData('X M 10 10'), 'M 10 10'); // mixing invalid and valid commands
+            assert.equal(V.normalizePathData('X M 10 10 X L 20 20'), 'M 10 10 L 20 20'); // invalid commands interspersed with valid commands
+        });
+
+        QUnit.test('path segment reconstruction', function(assert) {
+            var path1 = 'M 10 10';
+            var normalizedPath1 = V.normalizePathData(path1);
+            var reconstructedPath1 = g.Path(normalizedPath1).serialize();
+            assert.equal(normalizedPath1, reconstructedPath1);
+
+            var path2 = 'M 100 100 C 100 100 0 150 100 200 Z';
+            var normalizedPath2 = V.normalizePathData(path2);
+            var reconstructedPath2 = g.Path(normalizedPath2).serialize();
+            assert.equal(normalizedPath2, reconstructedPath2);
+
+            var path3 = 'M285.8,83V52.7h8.3v31c0,3.2-1,5.8-3,7.7c-2,1.9-4.4,2.8-7.2,2.8c-2.9,0-5.6-1.2-8.1-3.5l3.8-6.1c1.1,1.3,2.3,1.9,3.7,1.9c0.7,0,1.3-0.3,1.8-0.9C285.5,85,285.8,84.2,285.8,83z';
+            var normalizedPath3 = V.normalizePathData(path3);
+            var reconstructedPath3 = g.Path(normalizedPath3).serialize();
+            assert.equal(normalizedPath3, reconstructedPath3);
         });
     });
 

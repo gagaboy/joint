@@ -1,3 +1,4 @@
+
 // joint.dia.Element base model.
 // -----------------------------
 
@@ -29,7 +30,7 @@ joint.dia.Element = joint.dia.Cell.extend({
 
     position: function(x, y, opt) {
 
-        var isSetter = _.isNumber(y);
+        var isSetter = joint.util.isNumber(y);
 
         opt = (isSetter ? opt : x) || {};
 
@@ -37,10 +38,10 @@ joint.dia.Element = joint.dia.Cell.extend({
         if (opt.parentRelative) {
 
             // Getting the parent's position requires the collection.
-            // Cell.get('parent') helds cell id only.
+            // Cell.parent() holds cell id only.
             if (!this.graph) throw new Error('Element must be part of a graph.');
 
-            var parent = this.graph.getCell(this.get('parent'));
+            var parent = this.getParentCell();
             var parentPosition = parent && !parent.isLink()
                 ? parent.get('position')
                 : { x: 0, y: 0 };
@@ -128,9 +129,9 @@ joint.dia.Element = joint.dia.Cell.extend({
 
         if (opt.transition) {
 
-            if (!_.isObject(opt.transition)) opt.transition = {};
+            if (!joint.util.isObject(opt.transition)) opt.transition = {};
 
-            this.transition('position', translatedPosition, _.extend({}, opt.transition, {
+            this.transition('position', translatedPosition, joint.util.assign({}, opt.transition, {
                 valueFunction: joint.util.interpolate.object
             }));
 
@@ -140,7 +141,7 @@ joint.dia.Element = joint.dia.Cell.extend({
         }
 
         // Recursively call `translate()` on all the embeds cells.
-        _.invoke(this.getEmbeddedCells(), 'translate', tx, ty, opt);
+        joint.util.invoke(this.getEmbeddedCells(), 'translate', tx, ty, opt);
 
         return this;
     },
@@ -158,10 +159,10 @@ joint.dia.Element = joint.dia.Cell.extend({
         }
         // Setter
         // (size, opt) signature
-        if (_.isObject(width)) {
+        if (joint.util.isObject(width)) {
             opt = height;
-            height = _.isNumber(width.height) ? width.height : currentSize.height;
-            width = _.isNumber(width.width) ? width.width : currentSize.width;
+            height = joint.util.isNumber(width.height) ? width.height : currentSize.height;
+            width = joint.util.isNumber(width.width) ? width.width : currentSize.width;
         }
 
         return this.resize(width, height, opt);
@@ -304,7 +305,7 @@ joint.dia.Element = joint.dia.Cell.extend({
 
             if (opt.deep) {
                 // Recursively apply fitEmbeds on all embeds first.
-                _.invoke(embeddedCells, 'fitEmbeds', opt);
+                joint.util.invoke(embeddedCells, 'fitEmbeds', opt);
             }
 
             // Compute cell's size and position  based on the children bbox
@@ -359,6 +360,10 @@ joint.dia.Element = joint.dia.Cell.extend({
         return this;
     },
 
+    angle: function() {
+        return g.normalizeAngle(this.get('angle') || 0);
+    },
+
     getBBox: function(opt) {
 
         opt = opt || {};
@@ -377,13 +382,12 @@ joint.dia.Element = joint.dia.Cell.extend({
         var position = this.get('position');
         var size = this.get('size');
 
-        return g.rect(position.x, position.y, size.width, size.height);
+        return new g.Rect(position.x, position.y, size.width, size.height);
     }
 });
 
 // joint.dia.Element base view and controller.
 // -------------------------------------------
-
 
 joint.dia.ElementView = joint.dia.CellView.extend({
 
@@ -411,6 +415,8 @@ joint.dia.ElementView = joint.dia.CellView.extend({
         return classNames.join(' ');
     },
 
+    metrics: null,
+
     initialize: function() {
 
         joint.dia.CellView.prototype.initialize.apply(this, arguments);
@@ -423,6 +429,8 @@ joint.dia.ElementView = joint.dia.CellView.extend({
         this.listenTo(model, 'change:markup', this.render);
 
         this._initializePorts();
+
+        this.metrics = {};
     },
 
     /**
@@ -434,12 +442,15 @@ joint.dia.ElementView = joint.dia.CellView.extend({
 
     update: function(cell, renderingOnlyAttrs) {
 
+        this.metrics = {};
+
         this._removePorts();
 
         var model = this.model;
         var modelAttrs = model.attr();
         this.updateDOMSubtreeAttributes(this.el, modelAttrs, {
-            rootBBox: g.Rect(model.size()),
+            rootBBox: new g.Rect(model.size()),
+            selectors: this.selectors,
             scalableNode: this.scalableNode,
             rotatableNode: this.rotatableNode,
             // Use rendering only attributes if they differs from the model attributes
@@ -449,68 +460,239 @@ joint.dia.ElementView = joint.dia.CellView.extend({
         this._renderPorts();
     },
 
+    rotatableSelector: 'rotatable',
+    scalableSelector: 'scalable',
+    scalableNode: null,
+    rotatableNode: null,
+
     // `prototype.markup` is rendered by default. Set the `markup` attribute on the model if the
     // default markup is not desirable.
     renderMarkup: function() {
 
-        var markup = this.model.get('markup') || this.model.markup;
+        var element = this.model;
+        var markup = element.get('markup') || element.markup;
+        if (!markup) throw new Error('dia.ElementView: markup required');
+        if (Array.isArray(markup)) return this.renderJSONMarkup(markup);
+        if (typeof markup === 'string') return this.renderStringMarkup(markup);
+        throw new Error('dia.ElementView: invalid markup');
+    },
 
-        if (markup) {
+    renderJSONMarkup: function(markup) {
 
-            var svg = joint.util.template(markup)();
-            var nodes = V(svg);
+        var doc = joint.util.parseDOMJSON(markup);
+        // Selectors
+        var selectors = this.selectors = doc.selectors;
+        var rootSelector = this.selector;
+        if (selectors[rootSelector]) throw new Error('dia.ElementView: ambiguous root selector.');
+        selectors[rootSelector] = this.el;
+        // Cache transformation groups
+        this.rotatableNode = V(selectors[this.rotatableSelector]) || null;
+        this.scalableNode = V(selectors[this.scalableSelector]) || null;
+        // Fragment
+        this.vel.append(doc.fragment);
+    },
 
-            this.vel.append(nodes);
+    renderStringMarkup: function(markup) {
 
-        } else {
+        var vel = this.vel;
+        vel.append(V(markup));
+        // Cache transformation groups
+        this.rotatableNode = vel.findOne('.rotatable');
+        this.scalableNode = vel.findOne('.scalable');
 
-            throw new Error('properties.markup is missing while the default render() implementation is used.');
-        }
+        var selectors = this.selectors = {};
+        selectors[this.selector] = this.el;
     },
 
     render: function() {
 
-        this.$el.empty();
-
+        this.vel.empty();
         this.renderMarkup();
-        this.rotatableNode = this.vel.findOne('.rotatable');
-        var scalable = this.scalableNode = this.vel.findOne('.scalable');
-        if (scalable) {
+        if (this.scalableNode) {
             // Double update is necessary for elements with the scalable group only
             // Note the resize() triggers the other `update`.
             this.update();
         }
         this.resize();
-        this.rotate();
-        this.translate();
-
+        if (this.rotatableNode) {
+            // Translate transformation is applied on `this.el` while the rotation transformation
+            // on `this.rotatableNode`
+            this.rotate();
+            this.translate();
+            return this;
+        }
+        this.updateTransformation();
         return this;
     },
 
-    resize: function(cell, changed, opt) {
+    resize: function() {
 
-        var model = this.model;
-        var size = model.get('size') || { width: 1, height: 1 };
-        var angle = model.get('angle') || 0;
+        if (this.scalableNode) return this.sgResize.apply(this, arguments);
+        if (this.model.attributes.angle) this.rotate();
+        this.update();
+    },
 
-        var scalable = this.scalableNode;
-        if (!scalable) {
+    translate: function() {
 
-            if (angle !== 0) {
-                // update the origin of the rotation
-                this.rotate();
-            }
-            // update the ref attributes
-            this.update();
+        if (this.rotatableNode) return this.rgTranslate();
+        this.updateTransformation();
+    },
 
-            // If there is no scalable elements, than there is nothing to scale.
-            return;
+    rotate: function() {
+
+        if (this.rotatableNode) return this.rgRotate();
+        this.updateTransformation();
+    },
+
+    updateTransformation: function() {
+
+        var transformation = this.getTranslateString();
+        var rotateString = this.getRotateString();
+        if (rotateString) transformation += ' ' + rotateString;
+        this.vel.attr('transform', transformation);
+    },
+
+    getTranslateString: function() {
+
+        var position = this.model.attributes.position;
+        return 'translate(' + position.x + ',' + position.y + ')';
+    },
+
+    getRotateString: function() {
+        var attributes = this.model.attributes;
+        var angle = attributes.angle;
+        if (!angle) return null;
+        var size = attributes.size;
+        return 'rotate(' + angle + ',' + (size.width / 2) + ',' + (size.height / 2) + ')';
+    },
+
+    getBBox: function(opt) {
+
+        var bbox;
+        if (opt && opt.useModelGeometry) {
+            var model = this.model;
+            bbox = model.getBBox().bbox(model.angle());
+        } else {
+            bbox = this.getNodeBBox(this.el);
         }
 
-        var scalableBbox = scalable.bbox(true);
+        return this.paper.localToPaperRect(bbox);
+    },
+
+    nodeCache: function(magnet) {
+
+        var id = V.ensureId(magnet);
+        var metrics = this.metrics[id];
+        if (!metrics) metrics = this.metrics[id] = {};
+        return metrics;
+    },
+
+    getNodeData: function(magnet) {
+
+        var metrics = this.nodeCache(magnet);
+        if (!metrics.data) metrics.data = {};
+        return metrics.data;
+    },
+
+    getNodeBBox: function(magnet) {
+
+        var rect = this.getNodeBoundingRect(magnet);
+        var magnetMatrix = this.getNodeMatrix(magnet);
+        var translateMatrix = this.getRootTranslateMatrix();
+        var rotateMatrix = this.getRootRotateMatrix();
+        return V.transformRect(rect, translateMatrix.multiply(rotateMatrix).multiply(magnetMatrix));
+    },
+
+    getNodeBoundingRect: function(magnet) {
+
+        var metrics = this.nodeCache(magnet);
+        if (metrics.boundingRect === undefined) metrics.boundingRect = V(magnet).getBBox();
+        return new g.Rect(metrics.boundingRect);
+    },
+
+    getNodeUnrotatedBBox: function(magnet) {
+
+        var rect = this.getNodeBoundingRect(magnet);
+        var magnetMatrix = this.getNodeMatrix(magnet);
+        var translateMatrix = this.getRootTranslateMatrix();
+        return V.transformRect(rect, translateMatrix.multiply(magnetMatrix));
+    },
+
+    getNodeShape: function(magnet) {
+
+        var metrics = this.nodeCache(magnet);
+        if (metrics.geometryShape === undefined) metrics.geometryShape = V(magnet).toGeometryShape();
+        return metrics.geometryShape.clone();
+    },
+
+    getNodeMatrix: function(magnet) {
+
+        var metrics = this.nodeCache(magnet);
+        if (metrics.magnetMatrix === undefined) {
+            var target = this.rotatableNode || this.el;
+            metrics.magnetMatrix = V(magnet).getTransformToElement(target);
+        }
+        return V.createSVGMatrix(metrics.magnetMatrix);
+    },
+
+    getRootTranslateMatrix: function() {
+
+        var model = this.model;
+        var position = model.position();
+        var mt = V.createSVGMatrix().translate(position.x, position.y);
+        return mt;
+    },
+
+    getRootRotateMatrix: function() {
+
+        var mr = V.createSVGMatrix();
+        var model = this.model;
+        var angle = model.angle();
+        if (angle) {
+            var bbox = model.getBBox();
+            var cx = bbox.width / 2;
+            var cy = bbox.height / 2;
+            mr = mr.translate(cx, cy).rotate(angle).translate(-cx, -cy);
+        }
+        return mr;
+    },
+
+    // Rotatable & Scalable Group
+    // always slower, kept mainly for backwards compatibility
+
+    rgRotate: function() {
+
+        this.rotatableNode.attr('transform', this.getRotateString());
+    },
+
+    rgTranslate: function() {
+
+        this.vel.attr('transform', this.getTranslateString());
+    },
+
+    sgResize: function(cell, changed, opt) {
+
+        var model = this.model;
+        var angle = model.get('angle') || 0;
+        var size = model.get('size') || { width: 1, height: 1 };
+        var scalable = this.scalableNode;
+
+        // Getting scalable group's bbox.
+        // Due to a bug in webkit's native SVG .getBBox implementation, the bbox of groups with path children includes the paths' control points.
+        // To work around the issue, we need to check whether there are any path elements inside the scalable group.
+        var recursive = false;
+        if (scalable.node.getElementsByTagName('path').length > 0) {
+            // If scalable has at least one descendant that is a path, we need to switch to recursive bbox calculation.
+            // If there are no path descendants, group bbox calculation works and so we can use the (faster) native function directly.
+            recursive = true;
+        }
+        var scalableBBox = scalable.getBBox({ recursive: recursive });
+
         // Make sure `scalableBbox.width` and `scalableBbox.height` are not zero which can happen if the element does not have any content. By making
         // the width/height 1, we prevent HTML errors of the type `scale(Infinity, Infinity)`.
-        scalable.attr('transform', 'scale(' + (size.width / (scalableBbox.width || 1)) + ',' + (size.height / (scalableBbox.height || 1)) + ')');
+        var sx = (size.width / (scalableBBox.width || 1));
+        var sy = (size.height / (scalableBBox.height || 1));
+        scalable.attr('transform', 'scale(' + sx + ',' + sy + ')');
 
         // Now the interesting part. The goal is to be able to store the object geometry via just `x`, `y`, `angle`, `width` and `height`
         // Order of transformations is significant but we want to reconstruct the object always in the order:
@@ -523,13 +705,13 @@ joint.dia.ElementView = joint.dia.CellView.extend({
         // Cancel the rotation but now around a different origin, which is the center of the scaled object.
         var rotatable = this.rotatableNode;
         var rotation = rotatable && rotatable.attr('transform');
-        if (rotation && rotation !== 'null') {
+        if (rotation && rotation !== null) {
 
             rotatable.attr('transform', rotation + ' rotate(' + (-angle) + ',' + (size.width / 2) + ',' + (size.height / 2) + ')');
-            var rotatableBbox = scalable.bbox(false, this.paper.viewport);
+            var rotatableBBox = scalable.getBBox({ target: this.paper.viewport });
 
             // Store new x, y and perform rotate() again against the new rotation origin.
-            model.set('position', { x: rotatableBbox.x, y: rotatableBbox.y }, opt);
+            model.set('position', { x: rotatableBBox.x, y: rotatableBBox.y }, opt);
             this.rotate();
         }
 
@@ -538,56 +720,18 @@ joint.dia.ElementView = joint.dia.CellView.extend({
         this.update();
     },
 
-    translate: function(model, changes, opt) {
+    // Embedding mode methods.
+    // -----------------------
 
-        var position = this.model.get('position') || { x: 0, y: 0 };
+    prepareEmbedding: function(data) {
 
-        this.vel.attr('transform', 'translate(' + position.x + ',' + position.y + ')');
-    },
+        data || (data = {});
 
-    rotate: function() {
-
-        var rotatable = this.rotatableNode;
-        if (!rotatable) {
-            // If there is no rotatable elements, then there is nothing to rotate.
-            return;
-        }
-
-        var angle = this.model.get('angle') || 0;
-        var size = this.model.get('size') || { width: 1, height: 1 };
-
-        var ox = size.width / 2;
-        var oy = size.height / 2;
-
-        if (angle !== 0) {
-            rotatable.attr('transform', 'rotate(' + angle + ',' + ox + ',' + oy + ')');
-        } else {
-            rotatable.removeAttr('transform');
-        }
-    },
-
-    getBBox: function(opt) {
-
-        if (opt && opt.useModelGeometry) {
-            var bbox = this.model.getBBox().bbox(this.model.get('angle'));
-            return this.paper.localToPaperRect(bbox);
-        }
-
-        return joint.dia.CellView.prototype.getBBox.apply(this, arguments);
-    },
-
-    // Embedding mode methods
-    // ----------------------
-
-    prepareEmbedding: function(opt) {
-
-        opt = opt || {};
-
-        var model = opt.model || this.model;
-        var paper = opt.paper || this.paper;
+        var model = data.model || this.model;
+        var paper = data.paper || this.paper;
         var graph = paper.model;
 
-        model.startBatch('to-front', opt);
+        model.startBatch('to-front');
 
         // Bring the model to the front with all his embeds.
         model.toFront({ deep: true, ui: true });
@@ -600,24 +744,32 @@ joint.dia.ElementView = joint.dia.CellView.extend({
         // Move to front also all the inbound and outbound links that are connected
         // to any of the element descendant. If we bring to front only embedded elements,
         // links connected to them would stay in the background.
-        _.invoke(connectedLinks, 'set', 'z', maxZ + 1, { ui: true });
+        joint.util.invoke(connectedLinks, 'set', 'z', maxZ + 1, { ui: true });
 
         model.stopBatch('to-front');
 
         // Before we start looking for suitable parent we remove the current one.
-        var parentId = model.get('parent');
+        var parentId = model.parent();
         parentId && graph.getCell(parentId).unembed(model, { ui: true });
     },
 
-    processEmbedding: function(opt) {
+    processEmbedding: function(data) {
 
-        opt = opt || {};
+        data || (data = {});
 
-        var model = opt.model || this.model;
-        var paper = opt.paper || this.paper;
-
+        var model = data.model || this.model;
+        var paper = data.paper || this.paper;
         var paperOptions = paper.options;
-        var candidates = paper.model.findModelsUnderElement(model, { searchBy: paperOptions.findParentBy });
+
+        var candidates = [];
+        if (joint.util.isFunction(paperOptions.findParentBy)) {
+            var parents = joint.util.toArray(paperOptions.findParentBy.call(paper.model, this));
+            candidates = parents.filter(function(el) {
+                return el instanceof joint.dia.Cell && this.model.id !== el.id && !el.isEmbeddedIn(this.model);
+            }.bind(this));
+        } else {
+            candidates = paper.model.findModelsUnderElement(model, { searchBy: paperOptions.findParentBy });
+        }
 
         if (paperOptions.frontParentOnly) {
             // pick the element with the highest `z` index
@@ -625,7 +777,7 @@ joint.dia.ElementView = joint.dia.CellView.extend({
         }
 
         var newCandidateView = null;
-        var prevCandidateView = this._candidateEmbedView;
+        var prevCandidateView = data.candidateEmbedView;
 
         // iterate over all candidates starting from the last one (has the highest z-index).
         for (var i = candidates.length - 1; i >= 0; i--) {
@@ -652,33 +804,35 @@ joint.dia.ElementView = joint.dia.CellView.extend({
 
         if (newCandidateView && newCandidateView != prevCandidateView) {
             // A new candidate view found. Highlight the new one.
-            this.clearEmbedding();
-            this._candidateEmbedView = newCandidateView.highlight(null, { embedding: true });
+            this.clearEmbedding(data);
+            data.candidateEmbedView = newCandidateView.highlight(null, { embedding: true });
         }
 
         if (!newCandidateView && prevCandidateView) {
             // No candidate view found. Unhighlight the previous candidate.
-            this.clearEmbedding();
+            this.clearEmbedding(data);
         }
     },
 
-    clearEmbedding: function() {
+    clearEmbedding: function(data) {
 
-        var candidateView = this._candidateEmbedView;
+        data || (data = {});
+
+        var candidateView = data.candidateEmbedView;
         if (candidateView) {
             // No candidate view found. Unhighlight the previous candidate.
             candidateView.unhighlight(null, { embedding: true });
-            this._candidateEmbedView = null;
+            data.candidateEmbedView = null;
         }
     },
 
-    finalizeEmbedding: function(opt) {
+    finalizeEmbedding: function(data) {
 
-        opt = opt || {};
+        data || (data = {});
 
-        var candidateView = this._candidateEmbedView;
-        var model = opt.model || this.model;
-        var paper = opt.paper || this.paper;
+        var candidateView = data.candidateEmbedView;
+        var model = data.model || this.model;
+        var paper = data.paper || this.paper;
 
         if (candidateView) {
 
@@ -686,120 +840,91 @@ joint.dia.ElementView = joint.dia.CellView.extend({
             candidateView.model.embed(model, { ui: true });
             candidateView.unhighlight(null, { embedding: true });
 
-            delete this._candidateEmbedView;
+            data.candidateEmbedView = null;
         }
 
-        _.invoke(paper.model.getConnectedLinks(model, { deep: true }), 'reparent', { ui: true });
+        joint.util.invoke(paper.model.getConnectedLinks(model, { deep: true }), 'reparent', { ui: true });
     },
 
     // Interaction. The controller part.
     // ---------------------------------
 
+    pointerdblclick: function(evt, x, y) {
+
+        joint.dia.CellView.prototype.pointerdblclick.apply(this, arguments);
+        this.notify('element:pointerdblclick', evt, x, y);
+    },
+
+    pointerclick: function(evt, x, y) {
+
+        joint.dia.CellView.prototype.pointerclick.apply(this, arguments);
+        this.notify('element:pointerclick', evt, x, y);
+    },
+
+    contextmenu: function(evt, x, y) {
+
+        joint.dia.CellView.prototype.contextmenu.apply(this, arguments);
+        this.notify('element:contextmenu', evt, x, y);
+    },
+
     pointerdown: function(evt, x, y) {
 
-        var paper = this.paper;
+        joint.dia.CellView.prototype.pointerdown.apply(this, arguments);
+        this.notify('element:pointerdown', evt, x, y);
 
-        if (
-            evt.target.getAttribute('magnet') &&
-            this.can('addLinkFromMagnet') &&
-            paper.options.validateMagnet.call(paper, this, evt.target)
-        ) {
-
-            this.model.startBatch('add-link');
-
-            var link = paper.getDefaultLink(this, evt.target);
-
-            link.set({
-                source: {
-                    id: this.model.id,
-                    selector: this.getSelector(evt.target),
-                    port: evt.target.getAttribute('port')
-                },
-                target: { x: x, y: y }
-            });
-
-            paper.model.addCell(link);
-
-            var linkView = this._linkView = paper.findViewByModel(link);
-
-            linkView.pointerdown(evt, x, y);
-            linkView.startArrowheadMove('target', { whenNotAllowed: 'remove' });
-
-        } else {
-
-            this._dx = x;
-            this._dy = y;
-
-            this.restrictedArea = paper.getRestrictedArea(this);
-
-            joint.dia.CellView.prototype.pointerdown.apply(this, arguments);
-            this.notify('element:pointerdown', evt, x, y);
-        }
+        this.dragStart(evt, x, y);
     },
 
     pointermove: function(evt, x, y) {
 
-        if (this._linkView) {
+        var data = this.eventData(evt);
+        switch (data.action) {
+            case 'move':
+                this.drag(evt, x, y);
+                break;
+            case 'magnet':
+                this.dragMagnet(evt, x, y);
+                break;
+        }
 
-            // let the linkview deal with this event
-            this._linkView.pointermove(evt, x, y);
-
-        } else {
-
-            var grid = this.paper.options.gridSize;
-
-            if (this.can('elementMove')) {
-
-                var position = this.model.get('position');
-
-                // Make sure the new element's position always snaps to the current grid after
-                // translate as the previous one could be calculated with a different grid size.
-                var tx = g.snapToGrid(position.x, grid) - position.x + g.snapToGrid(x - this._dx, grid);
-                var ty = g.snapToGrid(position.y, grid) - position.y + g.snapToGrid(y - this._dy, grid);
-
-                this.model.translate(tx, ty, { restrictedArea: this.restrictedArea, ui: true });
-
-                if (this.paper.options.embeddingMode) {
-
-                    if (!this._inProcessOfEmbedding) {
-                        // Prepare the element for embedding only if the pointer moves.
-                        // We don't want to do unnecessary action with the element
-                        // if an user only clicks/dblclicks on it.
-                        this.prepareEmbedding();
-                        this._inProcessOfEmbedding = true;
-                    }
-
-                    this.processEmbedding();
-                }
-            }
-
-            this._dx = g.snapToGrid(x, grid);
-            this._dy = g.snapToGrid(y, grid);
-
+        if (!data.stopPropagation) {
             joint.dia.CellView.prototype.pointermove.apply(this, arguments);
             this.notify('element:pointermove', evt, x, y);
         }
+
+        // Make sure the element view data is passed along.
+        // It could have been wiped out in the handlers above.
+        this.eventData(evt, data);
     },
 
     pointerup: function(evt, x, y) {
 
-        if (this._linkView) {
+        var data = this.eventData(evt);
+        switch (data.action) {
+            case 'move':
+                this.dragEnd(evt, x, y);
+                break;
+            case 'magnet':
+                this.dragMagnetEnd(evt, x, y);
+                return;
+        }
 
-            // Let the linkview deal with this event.
-            this._linkView.pointerup(evt, x, y);
-            this._linkView = null;
-            this.model.stopBatch('add-link');
-
-        } else {
-
-            if (this._inProcessOfEmbedding) {
-                this.finalizeEmbedding();
-                this._inProcessOfEmbedding = false;
-            }
-
+        if (!data.stopPropagation) {
             this.notify('element:pointerup', evt, x, y);
             joint.dia.CellView.prototype.pointerup.apply(this, arguments);
         }
+    },
+
+    mouseover: function(evt) {
+
+        joint.dia.CellView.prototype.mouseover.apply(this, arguments);
+        this.notify('element:mouseover', evt);
+    },
+
+    mouseout: function(evt) {
+
+        joint.dia.CellView.prototype.mouseout.apply(this, arguments);
+        this.notify('element:mouseout', evt);
     },
 
     mouseenter: function(evt) {
@@ -812,5 +937,125 @@ joint.dia.ElementView = joint.dia.CellView.extend({
 
         joint.dia.CellView.prototype.mouseleave.apply(this, arguments);
         this.notify('element:mouseleave', evt);
+    },
+
+    mousewheel: function(evt, x, y, delta) {
+
+        joint.dia.CellView.prototype.mousewheel.apply(this, arguments);
+        this.notify('element:mousewheel', evt, x, y, delta);
+    },
+
+    onmagnet: function(evt, x, y) {
+
+        this.dragMagnetStart(evt, x, y);
+
+        var stopPropagation = this.eventData(evt).stopPropagation;
+        if (stopPropagation) evt.stopPropagation();
+    },
+
+    // Drag Start Handlers
+
+    dragStart: function(evt, x, y) {
+
+        if (!this.can('elementMove')) return;
+
+        this.eventData(evt, {
+            action: 'move',
+            x: x,
+            y: y,
+            restrictedArea: this.paper.getRestrictedArea(this)
+        });
+    },
+
+    dragMagnetStart: function(evt, x, y) {
+
+        if (!this.can('addLinkFromMagnet')) return;
+
+        this.model.startBatch('add-link');
+
+        var paper = this.paper;
+        var graph = paper.model;
+        var magnet = evt.target;
+        var link = paper.getDefaultLink(this, magnet);
+        var sourceEnd = this.getLinkEnd(magnet, x, y, link, 'source');
+        var targetEnd = { x: x, y: y };
+
+        link.set({ source: sourceEnd, target: targetEnd });
+        link.addTo(graph, { async: false, ui: true });
+
+        var linkView = link.findView(paper);
+        joint.dia.CellView.prototype.pointerdown.apply(linkView, arguments);
+        linkView.notify('link:pointerdown', evt, x, y);
+        var data = linkView.startArrowheadMove('target', { whenNotAllowed: 'remove' });
+        linkView.eventData(evt, data);
+
+        this.eventData(evt, {
+            action: 'magnet',
+            linkView: linkView,
+            stopPropagation: true
+        });
+
+        this.paper.delegateDragEvents(this, evt.data);
+    },
+
+    // Drag Handlers
+
+    drag: function(evt, x, y) {
+
+        var paper = this.paper;
+        var grid = paper.options.gridSize;
+        var element = this.model;
+        var position = element.position();
+        var data = this.eventData(evt);
+
+        // Make sure the new element's position always snaps to the current grid after
+        // translate as the previous one could be calculated with a different grid size.
+        var tx = g.snapToGrid(position.x, grid) - position.x + g.snapToGrid(x - data.x, grid);
+        var ty = g.snapToGrid(position.y, grid) - position.y + g.snapToGrid(y - data.y, grid);
+
+        element.translate(tx, ty, { restrictedArea: data.restrictedArea, ui: true });
+
+        var embedding = !!data.embedding;
+        if (paper.options.embeddingMode) {
+            if (!embedding) {
+                // Prepare the element for embedding only if the pointer moves.
+                // We don't want to do unnecessary action with the element
+                // if an user only clicks/dblclicks on it.
+                this.prepareEmbedding(data);
+                embedding = true;
+            }
+            this.processEmbedding(data);
+        }
+
+        this.eventData(evt, {
+            x: g.snapToGrid(x, grid),
+            y: g.snapToGrid(y, grid),
+            embedding: embedding
+        });
+    },
+
+    dragMagnet: function(evt, x, y) {
+
+        var data = this.eventData(evt);
+        var linkView = data.linkView;
+        if (linkView) linkView.pointermove(evt, x, y);
+    },
+
+    // Drag End Handlers
+
+    dragEnd: function(evt, x, y) {
+
+        var data = this.eventData(evt);
+        if (data.embedding) this.finalizeEmbedding(data);
+    },
+
+    dragMagnetEnd: function(evt, x, y) {
+
+        var data = this.eventData(evt);
+        var linkView = data.linkView;
+        if (linkView) linkView.pointerup(evt, x, y);
+
+        this.model.stopBatch('add-link');
     }
+
 });

@@ -64,7 +64,7 @@ joint.layout.DirectedGraph = {
 
         // check the `setLinkVertices` here for backwards compatibility
         if (opt.setVertices || opt.setLinkVertices) {
-            if (_.isFunction(opt.setVertices)) {
+            if (joint.util.isFunction(opt.setVertices)) {
                 opt.setVertices(link, points);
             } else {
                 // Remove the first and last point from points array.
@@ -76,7 +76,7 @@ joint.layout.DirectedGraph = {
 
         if (opt.setLabels && ('x' in glEdge) && ('y' in glEdge)) {
             var labelPosition = { x: glEdge.x, y: glEdge.y};
-            if (_.isFunction(opt.setLabels)) {
+            if (joint.util.isFunction(opt.setLabels)) {
                 opt.setLabels(link, labelPosition, points);
             } else {
                 // Convert the absolute label position to a relative position
@@ -103,13 +103,14 @@ joint.layout.DirectedGraph = {
             graph = graphOrCells;
         } else {
             // Reset cells in dry mode so the graph reference is not stored on the cells.
-            graph = (new joint.dia.Graph()).resetCells(graphOrCells, { dry: true });
+            // `sort: false` to prevent elements to change their order based on the z-index
+            graph = (new joint.dia.Graph()).resetCells(graphOrCells, { dry: true, sort: false });
         }
 
         // This is not needed anymore.
         graphOrCells = null;
 
-        opt = _.defaults(opt || {}, {
+        opt = joint.util.defaults(opt || {}, {
             resizeClusters: true,
             clusterPadding: 10,
             exportElement: this.exportElement,
@@ -166,8 +167,8 @@ joint.layout.DirectedGraph = {
 
         // Update the graph.
         graph.fromGraphLib(glGraph, {
-            importNode: _.partial(this.importElement, opt),
-            importEdge: _.partial(this.importLink, opt)
+            importNode: this.importElement.bind(graph, opt),
+            importEdge: this.importLink.bind(graph, opt)
         });
 
         if (opt.resizeClusters) {
@@ -177,12 +178,14 @@ joint.layout.DirectedGraph = {
             // 2. map id on cells
             // 3. sort cells by their depth (the deepest first)
             // 4. resize cell to fit their direct children only.
-            _.chain(glGraph.nodes())
+            var clusters = glGraph.nodes()
                 .filter(function(v) { return glGraph.children(v).length > 0; })
-                .map(graph.getCell, graph)
-                .sortBy(function(cluster) { return -cluster.getAncestors().length; })
-                .invoke('fitEmbeds', { padding: opt.clusterPadding })
-                .value();
+                .map(graph.getCell.bind(graph))
+                .sort(function(aCluster, bCluster) {
+                    return bCluster.getAncestors().length - aCluster.getAncestors().length;
+                });
+
+            joint.util.invoke(clusters, 'fitEmbeds', { padding: opt.clusterPadding });
         }
 
         graph.stopBatch('layout');
@@ -202,8 +205,8 @@ joint.layout.DirectedGraph = {
 
         opt = opt || {};
 
-        var importNode = opt.importNode || _.noop;
-        var importEdge = opt.importEdge || _.noop;
+        var importNode = opt.importNode || joint.util.noop;
+        var importEdge = opt.importEdge || joint.util.noop;
         var graph = (this instanceof joint.dia.Graph) ? this : new joint.dia.Graph;
 
         // Import all nodes.
@@ -224,21 +227,23 @@ joint.layout.DirectedGraph = {
 
         opt = opt || {};
 
-        var glGraphType = _.pick(opt, 'directed', 'compound', 'multigraph');
+        var glGraphType = joint.util.pick(opt, 'directed', 'compound', 'multigraph');
         var glGraph = new graphlib.Graph(glGraphType);
-        var setNodeLabel = opt.setNodeLabel || _.noop;
-        var setEdgeLabel = opt.setEdgeLabel || _.noop;
-        var setEdgeName = opt.setEdgeName || _.noop;
+        var setNodeLabel = opt.setNodeLabel || joint.util.noop;
+        var setEdgeLabel = opt.setEdgeLabel || joint.util.noop;
+        var setEdgeName = opt.setEdgeName || joint.util.noop;
+        var collection = graph.get('cells');
 
-        graph.get('cells').each(function(cell) {
+        for (var i = 0, n = collection.length; i < n; i++) {
 
+            var cell = collection.at(i);
             if (cell.isLink()) {
 
                 var source = cell.get('source');
                 var target = cell.get('target');
 
                 // Links that end at a point are ignored.
-                if (!source.id || !target.id) return;
+                if (!source.id || !target.id) break;
 
                 // Note that if we are creating a multigraph we can name the edges. If
                 // we try to name edges on a non-multigraph an exception is thrown.
@@ -250,10 +255,15 @@ joint.layout.DirectedGraph = {
 
                 // For the compound graphs we have to take embeds into account.
                 if (glGraph.isCompound() && cell.has('parent')) {
-                    glGraph.setParent(cell.id, cell.get('parent'));
+                    var parentId = cell.get('parent');
+                    if (collection.has(parentId)) {
+                        // Make sure the parent cell is included in the graph (this can
+                        // happen when the layout is run on part of the graph only).
+                        glGraph.setParent(cell.id, parentId);
+                    }
                 }
             }
-        });
+        }
 
         return glGraph;
     }

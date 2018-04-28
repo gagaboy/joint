@@ -2,7 +2,7 @@
 
 QUnit.module('util', function(hooks) {
 
-    QUnit.test('util.interpolate', function() {
+    QUnit.test('util.interpolate', function(assert) {
 
         var values = [0, .25, .5, .75, 1];
 
@@ -16,24 +16,40 @@ QUnit.module('util', function(hooks) {
         var hexColorArray = _.map(values, hexColorInterpolation);
         var unitArray = _.map(values, unitInterpolation);
 
-        deepEqual(numberArray, [
+        assert.deepEqual(numberArray, [
             0, 25, 50, 75, 100
         ], 'Numbers interpolated.');
 
-        deepEqual(objectArray, [
+        assert.deepEqual(objectArray, [
             { x: 100, y: 200 }, { x: 125, y: 150 }, { x: 150, y: 100 }, { x: 175, y: 50 }, { x: 200,    y: 0 }
         ], 'Objects interpolated.');
 
-        deepEqual(hexColorArray, [
+        assert.deepEqual(hexColorArray, [
             '#ffffff', '#bfffdd', '#7fffbb', '#3fff99', '#00ff77'
         ], 'String hex colors interpolated.');
 
-        deepEqual(unitArray, [
+        assert.deepEqual(unitArray, [
             '1.00em', '0.88em', '0.75em', '0.63em', '0.50em'
         ], 'Numbers with units interpolated.');
     });
 
-    QUnit.test('util.format.number', function() {
+    QUnit.test('util.isPercentage', function(assert) {
+
+        assert.equal(joint.util.isPercentage(undefined), false, 'undefined => false');
+        assert.equal(joint.util.isPercentage(null), false, 'null => false');
+        assert.equal(joint.util.isPercentage(true), false, 'true => false');
+        assert.equal(joint.util.isPercentage(false), false, 'false => false');
+        assert.equal(joint.util.isPercentage(0), false, '0 => false');
+        assert.equal(joint.util.isPercentage(10), false, '10 => false');
+        assert.equal(joint.util.isPercentage(''), false, '\'\' => false');
+        assert.equal(joint.util.isPercentage('10'), false, '\'10\' => false');
+
+        assert.equal(joint.util.isPercentage('%'), true, '\'%\' => true');
+        assert.equal(joint.util.isPercentage('10%'), true, '\'10%\' => true');
+        assert.equal(joint.util.isPercentage('-10%'), true, '\'-10%\' => true');
+    });
+
+    QUnit.test('util.format.number', function(assert) {
 
         var res = {
             '5.00': ['.2f', 5],
@@ -54,11 +70,11 @@ QUnit.module('util', function(hooks) {
 
         _.each(res, function(input, output) {
 
-            equal(joint.util.format.number(input[0], input[1]), output, 'number(' + input[0] + ', ' + input[1] + ') = ' + output);
+            assert.equal(joint.util.format.number(input[0], input[1]), output, 'number(' + input[0] + ', ' + input[1] + ') = ' + output);
         });
     });
 
-    QUnit.test('util.breakText', function() {
+    QUnit.test('util.breakText', function(assert) {
 
         // tests can't compare exact results as they may vary in different browsers
 
@@ -71,24 +87,24 @@ QUnit.module('util', function(hooks) {
 
         var text = 'Lorem ipsum dolor sit amet, consectetur adipiscing elit.';
 
-        equal(joint.util.breakText('', { width: 100 }, styles), '', 'An empty text was correctly broken.');
+        assert.equal(joint.util.breakText('', { width: 100 }, styles), '', 'An empty text was correctly broken.');
 
-        equal(joint.util.breakText(text, { width: 0, height: 0 }, styles), '', 'A text was correctly broken when zero width and height provided.');
+        assert.equal(joint.util.breakText(text, { width: 0, height: 0 }, styles), '', 'A text was correctly broken when zero width and height provided.');
 
-        ok(_.contains(joint.util.breakText(text, { width: 100 }, styles), '\n'),
+        assert.ok(_.includes(joint.util.breakText(text, { width: 100 }, styles), '\n'),
            'A text was broken when width A specified.');
 
-        ok(_.contains(joint.util.breakText(text, { width: 15 }, styles), '\n'), 'A text was broken when width B specified.');
+        assert.ok(_.includes(joint.util.breakText(text, { width: 15 }, styles), '\n'), 'A text was broken when width B specified.');
 
         var brokenText = joint.util.breakText(text, { width: 100, height: 40 }, styles);
 
-        ok(_.contains(brokenText, 'Lorem') && !_.contains(brokenText, 'elit.'), 'A text was trimmed when width & height specified.');
+        assert.ok(_.includes(brokenText, 'Lorem') && !_.includes(brokenText, 'elit.'), 'A text was trimmed when width & height specified.');
 
         brokenText = joint.util.breakText(text, { width: 100, height: 50 }, _.extend({}, styles, { 'font-size': '18px' }));
 
-        ok(_.contains(brokenText, '\n') || !_.contains(brokenText, 'elit.'), 'A text was broken when style specified.');
+        assert.ok(_.includes(brokenText, '\n') || !_.includes(brokenText, 'elit.'), 'A text was broken when style specified.');
 
-        throws(function() {
+        assert.throws(function() {
             joint.util.breakText(text, { width: 100, height: 50 }, _.extend({}, styles, { 'font-size': '18px' }), { svgDocument: 'not-svg' });
         }, /appendChild|undefined/, 'A custom svgDocument provided was recognized.');
     });
@@ -106,7 +122,7 @@ QUnit.module('util', function(hooks) {
         assert.deepEqual(joint.util.parseCssNumeric(10, ['em', 'px']), { value: 10 });
     });
 
-    QUnit.test('util.getByPath()', function() {
+    QUnit.test('util.getByPath()', function(assert) {
 
         var obj = {
             a: 1,
@@ -122,40 +138,40 @@ QUnit.module('util', function(hooks) {
             'a/b/c': { d: 'abcd' }
         };
 
-        deepEqual(joint.util.getByPath(obj, 'none'), undefined, 'non-existing property is undefined');
-        equal(joint.util.getByPath(obj, 'a'), 1, 'existing property is a number');
-        deepEqual(joint.util.getByPath(obj, 'b'), { c: 2, d: 3 }, 'existing property is an object');
-        equal(joint.util.getByPath(obj, 'b/c'), 2, 'nested property is a number');
-        deepEqual(joint.util.getByPath(obj, 'b/none'), undefined, 'non-existing nested property is undefined');
-        deepEqual(joint.util.getByPath(obj, 'f'), {}, 'property is an empty object');
-        deepEqual(joint.util.getByPath(obj, 'g'), [], 'property is an empty array');
-        deepEqual(joint.util.getByPath(obj, 'g/0'), undefined, 'first item of an empty array is undefined');
-        deepEqual(joint.util.getByPath(obj, 'h/0'), null, 'first item of an array is null');
-        deepEqual(joint.util.getByPath(obj, 'h/0/none'), undefined, 'nested property in null is undefined');
-        equal(joint.util.getByPath(obj, 'h/1'), 4, 'nth item of an array is number');
-        deepEqual(joint.util.getByPath(obj, 'h/1/none'), undefined, 'non-existing property of nth item of an array is undefined');
-        equal(joint.util.getByPath(obj, 'h/2/i/j'), 6, 'nested property of nth item of an array is number');
-        equal(joint.util.getByPath(obj, 'h.2.i.j', '.'), 6, 'same but this time with a custom delimiter');
-        equal(joint.util.getByPath(obj, ['h', '2', 'i', 'j']), 6, 'path as array');
-        equal(joint.util.getByPath(obj, ['a/b/c', 'd']), 'abcd', 'path as array, separator in name');
+        assert.deepEqual(joint.util.getByPath(obj, 'none'), undefined, 'non-existing property is undefined');
+        assert.equal(joint.util.getByPath(obj, 'a'), 1, 'existing property is a number');
+        assert.deepEqual(joint.util.getByPath(obj, 'b'), { c: 2, d: 3 }, 'existing property is an object');
+        assert.equal(joint.util.getByPath(obj, 'b/c'), 2, 'nested property is a number');
+        assert.deepEqual(joint.util.getByPath(obj, 'b/none'), undefined, 'non-existing nested property is undefined');
+        assert.deepEqual(joint.util.getByPath(obj, 'f'), {}, 'property is an empty object');
+        assert.deepEqual(joint.util.getByPath(obj, 'g'), [], 'property is an empty array');
+        assert.deepEqual(joint.util.getByPath(obj, 'g/0'), undefined, 'first item of an empty array is undefined');
+        assert.deepEqual(joint.util.getByPath(obj, 'h/0'), null, 'first item of an array is null');
+        assert.deepEqual(joint.util.getByPath(obj, 'h/0/none'), undefined, 'nested property in null is undefined');
+        assert.equal(joint.util.getByPath(obj, 'h/1'), 4, 'nth item of an array is number');
+        assert.deepEqual(joint.util.getByPath(obj, 'h/1/none'), undefined, 'non-existing property of nth item of an array is undefined');
+        assert.equal(joint.util.getByPath(obj, 'h/2/i/j'), 6, 'nested property of nth item of an array is number');
+        assert.equal(joint.util.getByPath(obj, 'h.2.i.j', '.'), 6, 'same but this time with a custom delimiter');
+        assert.equal(joint.util.getByPath(obj, ['h', '2', 'i', 'j']), 6, 'path as array');
+        assert.equal(joint.util.getByPath(obj, ['a/b/c', 'd']), 'abcd', 'path as array, separator in name');
     });
 
-    QUnit.test('util.setByPath()', function() {
+    QUnit.test('util.setByPath()', function(assert) {
 
-        deepEqual(joint.util.setByPath({}, 'property', 1), { property: 1 }, 'non-existing property in an obj set as a number');
-        deepEqual(joint.util.setByPath({ property: 2 }, 'property', 3), { property: 3 }, 'existing property in an obj set as a number');
-        deepEqual(joint.util.setByPath([], '0', 4), [4], 'add an item to an empty array');
-        deepEqual(joint.util.setByPath([5, 6], '1', 7), [5, 7], 'change an item in an array');
-        deepEqual(joint.util.setByPath({}, 'first/second/third', 8), { first: { second: { third: 8 } } }, 'populate an empty object with nested objects');
-        deepEqual(joint.util.setByPath({}, 'first.second.third', 9, '.'), { first: { second: { third: 9 } } }, 'same but this time with a custom delimiter');
-        deepEqual(joint.util.setByPath([null], '0/property', 10), [{ property: 10 }], 'replace null item with an object');
-        deepEqual(joint.util.setByPath({ array: [] }, 'array/1', 'index'), { array: [undefined, 'index'] }, 'define array');
-        deepEqual(joint.util.setByPath({ object: {} }, 'object/1', 'property'), { object: { '1': 'property' } }, 'define property');
+        assert.deepEqual(joint.util.setByPath({}, 'property', 1), { property: 1 }, 'non-existing property in an obj set as a number');
+        assert.deepEqual(joint.util.setByPath({ property: 2 }, 'property', 3), { property: 3 }, 'existing property in an obj set as a number');
+        assert.deepEqual(joint.util.setByPath([], '0', 4), [4], 'add an item to an empty array');
+        assert.deepEqual(joint.util.setByPath([5, 6], '1', 7), [5, 7], 'change an item in an array');
+        assert.deepEqual(joint.util.setByPath({}, 'first/second/third', 8), { first: { second: { third: 8 } } }, 'populate an empty object with nested objects');
+        assert.deepEqual(joint.util.setByPath({}, 'first.second.third', 9, '.'), { first: { second: { third: 9 } } }, 'same but this time with a custom delimiter');
+        assert.deepEqual(joint.util.setByPath([null], '0/property', 10), [{ property: 10 }], 'replace null item with an object');
+        assert.deepEqual(joint.util.setByPath({ array: [] }, 'array/1', 'index'), { array: [undefined, 'index'] }, 'define array');
+        assert.deepEqual(joint.util.setByPath({ object: {} }, 'object/1', 'property'), { object: { '1': 'property' } }, 'define property');
     });
 
     QUnit.module('util.unsetByPath', function(hooks) {
 
-        QUnit.test('path defined as string', function() {
+        QUnit.test('path defined as string', function(assert) {
 
             var obj = {
                 a: 1,
@@ -166,13 +182,13 @@ QUnit.module('util', function(hooks) {
             };
 
             joint.util.unsetByPath(obj, 'b/c', '/');
-            deepEqual(obj, { a: 1, b: { d: 3 } }, 'A nested attribute was removed.');
+            assert.deepEqual(obj, { a: 1, b: { d: 3 } }, 'A nested attribute was removed.');
 
             joint.util.unsetByPath(obj, 'b');
-            deepEqual(obj, { a: 1 }, 'A primitive attribute was removed.');
+            assert.deepEqual(obj, { a: 1 }, 'A primitive attribute was removed.');
 
             joint.util.unsetByPath(obj, 'c/d');
-            deepEqual(obj, { a: 1 }, 'Attempt to delete non-existing attribute doesn\'t affect object.');
+            assert.deepEqual(obj, { a: 1 }, 'Attempt to delete non-existing attribute doesn\'t affect object.');
 
         });
 
@@ -203,7 +219,7 @@ QUnit.module('util', function(hooks) {
             assert.deepEqual(obj.objectArray, [{ a: 'a_value', b: 'b_value' }, {}]);
         });
 
-        QUnit.test('path defined as array', function() {
+        QUnit.test('path defined as array', function(assert) {
 
             var obj = {
                 a: 1,
@@ -214,27 +230,105 @@ QUnit.module('util', function(hooks) {
             };
 
             joint.util.unsetByPath(obj, ['b', 'c'], '/');
-            deepEqual(obj, { a: 1, b: { d: 3 } }, 'A nested attribute was removed.');
+            assert.deepEqual(obj, { a: 1, b: { d: 3 } }, 'A nested attribute was removed.');
 
             joint.util.unsetByPath(obj, ['b']);
-            deepEqual(obj, { a: 1 }, 'A primitive attribute was removed.');
+            assert.deepEqual(obj, { a: 1 }, 'A primitive attribute was removed.');
 
             joint.util.unsetByPath(obj, ['c', 'd']);
-            deepEqual(obj, { a: 1 }, 'Attempt to delete non-existing attribute doesn\'t affect object.');
+            assert.deepEqual(obj, { a: 1 }, 'Attempt to delete non-existing attribute doesn\'t affect object.');
         });
     });
 
     QUnit.test('util.normalizeSides()', function(assert) {
 
-        assert.deepEqual(joint.util.normalizeSides(), { top: 0, left: 0, right: 0, bottom: 0 },
+        assert.deepEqual(joint.util.normalizeSides(undefined), { top: 0, right: 0, bottom: 0, left: 0 },
+                         'Undefined becomes 0');
+
+        assert.deepEqual(joint.util.normalizeSides(null), { top: 0, right: 0, bottom: 0, left: 0 },
+                         'Null becomes 0');
+
+        assert.deepEqual(joint.util.normalizeSides(''), { top: 0, right: 0, bottom: 0, left: 0 },
+                         'Empty string becomes 0');
+
+        assert.deepEqual(joint.util.normalizeSides('a'), { top: 0, right: 0, bottom: 0, left: 0 },
+                         'String becomes 0');
+
+        assert.deepEqual(joint.util.normalizeSides('5'), { top: 5, right: 5, bottom: 5, left: 5 },
+                         'String number becomes number');
+
+        assert.deepEqual(joint.util.normalizeSides('Infinity'), { top: 0, right: 0, bottom: 0, left: 0 },
+                         'Infinity becomes 0');
+
+        assert.deepEqual(joint.util.normalizeSides('NaN'), { top: 0, right: 0, bottom: 0, left: 0 },
+                         'NaN becomes 0');
+
+        assert.deepEqual(joint.util.normalizeSides(Infinity), { top: 0, right: 0, bottom: 0, left: 0 },
+                         'Infinity becomes 0');
+
+        assert.deepEqual(joint.util.normalizeSides(NaN), { top: 0, right: 0, bottom: 0, left: 0 },
+                         'NaN becomes 0');
+
+        assert.deepEqual(joint.util.normalizeSides({ left: undefined }), { top: 0, right: 0, bottom: 0, left: 0 },
+                         'Specific undefined becomes 0');
+
+        assert.deepEqual(joint.util.normalizeSides({ left: null }), { top: 0, right: 0, bottom: 0, left: 0 },
+                         'Specific null becomes 0');
+
+        assert.deepEqual(joint.util.normalizeSides({ left: '' }), { top: 0, right: 0, bottom: 0, left: 0 },
+                         'Specific empty string becomes 0');
+
+        assert.deepEqual(joint.util.normalizeSides({ left: 'a' }), { top: 0, right: 0, bottom: 0, left: 0 },
+                         'Specific string becomes 0');
+
+        assert.deepEqual(joint.util.normalizeSides({ left: '5' }), { top: 0, right: 0, bottom: 0, left: 5 },
+                         'Specific string number becomes number');
+
+        assert.deepEqual(joint.util.normalizeSides({ left: 'Infinity' }), { top: 0, right: 0, bottom: 0, left: 0 },
+                         'Specific string Infinity becomes 0');
+
+        assert.deepEqual(joint.util.normalizeSides({ left: 'NaN' }), { top: 0, right: 0, bottom: 0, left: 0 },
+                         'Specific string NaN becomes 0');
+
+        assert.deepEqual(joint.util.normalizeSides({ left: Infinity }), { top: 0, right: 0, bottom: 0, left: 0 },
+                         'Specific Infinity becomes 0');
+
+        assert.deepEqual(joint.util.normalizeSides({ left: NaN }), { top: 0, right: 0, bottom: 0, left: 0 },
+                         'Specific NaN becomes 0');
+
+
+
+        assert.deepEqual(joint.util.normalizeSides(), { top: 0, right: 0, bottom: 0, left: 0 },
                          'Returns sides defaulted to 0 if called without an argument.');
 
-        assert.deepEqual(joint.util.normalizeSides(5), { top: 5, left: 5, right: 5, bottom: 5 },
+        assert.deepEqual(joint.util.normalizeSides(5), { top: 5, right: 5, bottom: 5, left: 5 },
                          'Returns sides equaled to a number if called with this number as an argument.');
 
-        assert.deepEqual(joint.util.normalizeSides({ left: 5 }), { top: 0, left: 5, right: 0, bottom: 0 },
-                         'If called with an object, the existing sides are copied from the given object and the rest is defaulted to 0.');
+        assert.deepEqual(joint.util.normalizeSides({ horizontal: 5 }), { top: 0, right: 5, bottom: 0, left: 5 },
+                         'If called with an object, horizontal sides are applied to right and left and the rest is defaulted to 0.');
+
+        assert.deepEqual(joint.util.normalizeSides({ left: 5 }), { top: 0, right: 0, bottom: 0, left: 5 },
+                         'If called with an object, the existing sides are copied from the object and the rest is defaulted to 0.');
+
+        assert.deepEqual(joint.util.normalizeSides({ horizontal: 10, left: 5 }), { top: 0, right: 10, bottom: 0, left: 5 },
+                         'If called with an object, horizontal sides are overriden by more specific sides from the object and the rest is defaulted to 0.');
+
+        assert.deepEqual(joint.util.normalizeSides({ horizontal: 5, left: 0 }), { top: 0, right: 5, bottom: 0, left: 0 },
+                         'If called with an object, horizontal sides are overriden by more specific sides from the object and the rest is defaulted to 0.');
     });
+
+    QUnit.test('util.merge', function(assert) {
+
+        var types = joint.util.merge({ a: [99] }, { a: { b: 1 } });
+        assert.deepEqual(types, { a: { b: 1 } }, 'array is not merged with object');
+
+
+        var custom = joint.util.merge({ a: [99] }, { a: { b: 1 } }, function(a) {
+            return "x";
+        });
+        assert.deepEqual(custom, { a: 'x' });
+    });
+
 
     QUnit.test('joint.setTheme()', function(assert) {
 
@@ -462,7 +556,7 @@ QUnit.module('util', function(hooks) {
 
             _.each(someObject, function(fn, method) {
 
-                if (_.contains(methods, method)) {
+                if (_.includes(methods, method)) {
                     // Should be wrapped.
                     assert.equal(someObject[method], innerWrapper);
                 } else {
@@ -494,7 +588,7 @@ QUnit.module('util', function(hooks) {
 
             _.each(someObject, function(fn, method) {
 
-                if (_.contains(methods, method)) {
+                if (_.includes(methods, method)) {
                     // Should be wrapped.
                     assert.equal(someObject[method], innerWrapper);
                 } else {
@@ -679,5 +773,169 @@ QUnit.module('util', function(hooks) {
                 assert.equal(bBox.height, 80);
             });
         });
-    })
+    });
+
+    QUnit.module('parseDOMJSON', function(hooks) {
+
+        var util = joint.util;
+
+        QUnit.test('sanity', function(assert) {
+            var res = util.parseDOMJSON([{ tagName: 'rect' }], V.namespace.xmls);
+            assert.ok(res.fragment instanceof DocumentFragment);
+            assert.equal(Object(res.selectors), res.selectors);
+        });
+
+        QUnit.module('tagName', function() {
+
+            QUnit.test('required', function(assert) {
+                assert.throws(function() {
+                    util.parseDOMJSON([{ /* tagName missing */ }]);
+                });
+            });
+
+            QUnit.test('svg', function(assert) {
+                var res = util.parseDOMJSON([{ tagName: 'rect' }], V.namespace.xmls);
+                var node = res.fragment.firstChild;
+                assert.ok(node instanceof SVGRectElement);
+            });
+
+            QUnit.test('html', function(assert) {
+                var res = util.parseDOMJSON([{ tagName: 'div' }], V.namespace.xhtml);
+                var node = res.fragment.firstChild;
+                assert.ok(node instanceof HTMLDivElement);
+            });
+        });
+
+        QUnit.module('attributes', function() {
+
+            QUnit.test('svg', function(assert) {
+                var res = util.parseDOMJSON([{
+                    tagName: 'rect',
+                    attributes: { 'fill': 'red', 'xlink:href': '#test' }
+                }]);
+                var node = res.fragment.firstChild;
+                assert.equal(node.attributes.getNamedItem('fill').value, 'red');
+                assert.equal(node.attributes.getNamedItemNS(V.namespace.xlink, 'href').value, '#test');
+            });
+
+            QUnit.test('html', function(assert) {
+                var res = util.parseDOMJSON([{
+                    tagName: 'div',
+                    attributes: { 'title': 'test' }
+                }], V.namespace.xhtml);
+                var node = res.fragment.firstChild;
+                assert.equal(node.attributes.getNamedItem('title').value, 'test');
+            });
+        });
+
+        QUnit.module('style', function() {
+
+            QUnit.test('svg', function(assert) {
+                var res = util.parseDOMJSON([{
+                    tagName: 'rect',
+                    style: { 'fill': 'red' }
+                }]);
+                var node = res.fragment.firstChild;
+                assert.ok(/fill:/.test(node.attributes.getNamedItem('style').value));
+            });
+
+            QUnit.test('html', function(assert) {
+                var res = util.parseDOMJSON([{
+                    tagName: 'div',
+                    style: { 'color': 'red' }
+                }], V.namespace.xhtml);
+                var node = res.fragment.firstChild;
+                assert.ok(/color:/.test(node.attributes.getNamedItem('style').value));
+            });
+        });
+
+        QUnit.module('className', function() {
+
+            QUnit.test('svg', function(assert) {
+                var res = util.parseDOMJSON([{ tagName: 'rect', className: 'test' }]);
+                var node = res.fragment.firstChild;
+                assert.equal(node.className.baseVal, 'test');
+            });
+
+            QUnit.test('html', function(assert) {
+                var res = util.parseDOMJSON([{ tagName: 'div', className: 'test' }], V.namespace.xhtml);
+                var node = res.fragment.firstChild;
+                assert.equal(node.className, 'test');
+            });
+        });
+
+        QUnit.module('selector', function() {
+
+            QUnit.test('svg', function(assert) {
+                var res = util.parseDOMJSON([
+                    { tagName: 'rect', selector: 'test1' },
+                    { tagName: 'circle', selector: 'test2' }
+                ]);
+                assert.ok(res.selectors.test1 instanceof SVGRectElement);
+                assert.ok(res.selectors.test2 instanceof SVGCircleElement);
+                assert.equal(res.selectors.test1.getAttribute('joint-selector'), 'test1');
+                assert.equal(res.selectors.test2.getAttribute('joint-selector'), 'test2');
+            });
+
+            QUnit.test('html', function(assert) {
+                var res = util.parseDOMJSON([
+                    { tagName: 'div', selector: 'test1' },
+                    { tagName: 'img', selector: 'test2' },
+                ], V.namespace.xhtml);
+                assert.ok(res.selectors.test1 instanceof HTMLDivElement);
+                assert.ok(res.selectors.test2 instanceof HTMLImageElement);
+                assert.equal(res.selectors.test1.getAttribute('joint-selector'), 'test1');
+                assert.equal(res.selectors.test2.getAttribute('joint-selector'), 'test2');
+            });
+
+            QUnit.test('uniqueness', function(assert) {
+                assert.throws(function() {
+                    util.parseDOMJSON([
+                        { tagName: 'rect', selector: 'test' },
+                        { tagName: 'circle', selector: 'test' },
+                    ]);
+                });
+            });
+        });
+
+        QUnit.module('namespaceURI', function() {
+
+            QUnit.test('svg', function(assert) {
+                var res = util.parseDOMJSON([{ tagName: 'rect', namespaceURI: V.namespace.xmlns }]);
+                var node = res.fragment.firstChild;
+                assert.ok(node instanceof SVGRectElement);
+            });
+
+            QUnit.test('html', function(assert) {
+                var res = util.parseDOMJSON([{ tagName: 'div', namespaceURI: V.namespace.xhtml }]);
+                var node = res.fragment.firstChild;
+                assert.ok(node instanceof HTMLDivElement);
+            });
+        });
+
+        QUnit.module('children', function() {
+
+            QUnit.test('svg', function(assert) {
+                var res = util.parseDOMJSON([{
+                    tagName: 'g',
+                    children: [{ tagName: 'rect' }, { tagName: 'circle' }]
+                }]);
+                var group = res.fragment.firstChild;
+                assert.ok(group instanceof SVGGElement);
+                assert.ok(group.firstChild instanceof SVGRectElement);
+                assert.ok(group.lastChild instanceof SVGCircleElement);
+            });
+
+            QUnit.test('html', function(assert) {
+                var res = util.parseDOMJSON([{
+                    tagName: 'div',
+                    children: [{ tagName: 'p' }, { tagName: 'img' }]
+                }], V.namespace.xhtml);
+                var div = res.fragment.firstChild;
+                assert.ok(div instanceof HTMLDivElement);
+                assert.ok(div.firstChild instanceof HTMLParagraphElement);
+                assert.ok(div.lastChild instanceof HTMLImageElement);
+            });
+        });
+    });
 });

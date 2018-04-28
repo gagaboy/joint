@@ -11,13 +11,12 @@
 
         <link rel="stylesheet" href="css/tutorial.css" />
         <link rel="stylesheet" href="../node_modules/prismjs/themes/prism.css">
-
+        <link rel="stylesheet" href="../node_modules/prismjs/plugins/line-numbers/prism-line-numbers.css">
 
         <!-- Dependencies: -->
         <script src="../node_modules/jquery/dist/jquery.js"></script>
         <script src="../node_modules/lodash/index.js"></script>
         <script src="../node_modules/backbone/backbone.js"></script>
-
 
         <link rel="stylesheet" type="text/css" href="../build/joint.min.css" />
         <script type="text/javascript" src="../build/joint.min.js"></script>
@@ -28,62 +27,98 @@
     <body class="language-javascript tutorial-page">
 
         <script>
-            SVGElement.prototype.getTransformToElement = SVGElement.prototype.getTransformToElement || function (toElement) {
+            SVGElement.prototype.getTransformToElement = SVGElement.prototype.getTransformToElement || function(toElement) {
                 return toElement.getScreenCTM().inverse().multiply(this.getScreenCTM());
             };
         </script>
-        <div id="hello-world" class="tutorial">
+        <div class="tutorial">
 
             <h2>Hello world!</h2>
 
-            <pre><code>&lt;!DOCTYPE html&gt;
+            <p>In the following few pages of the tutorial, we will understand how to create a basic
+                <a href="introduction.html">JointJS diagram</a>:</p>
+
+            <div class="paper" id="paper-hello-world"></div>
+
+            <p>Feel free to copy-paste the program code into a new file and see it in action for yourself:</p>
+
+            <pre class="line-numbers"><code>&lt;!DOCTYPE html&gt;
 &lt;html&gt;
 &lt;head&gt;
-    &lt;link rel="stylesheet" href="joint.css" /&gt;
-    &lt;script src="jquery.js"&gt;&lt;/script&gt;
-    &lt;script src="lodash.js"&gt;&lt;/script&gt;
-    &lt;script src="backbone.js"&gt;&lt;/script&gt;
-    &lt;script src="joint.js"&gt;&lt;/script&gt;
+    &lt;link rel="stylesheet" type="text/css" href="https://cdnjs.cloudflare.com/ajax/libs/jointjs/2.1.0/joint.css" /&gt;
 &lt;/head&gt;
 &lt;body&gt;
-  &lt;div id="myholder"&gt;&lt;/div&gt;
-  &lt;script type="text/javascript"&gt;
+    &lt;!-- content --&gt;
+    &lt;div id="myholder"&gt;&lt;/div&gt;
 
-    var graph = new joint.dia.Graph;
+    &lt;!-- dependencies --&gt;
+    &lt;script src="https://cdnjs.cloudflare.com/ajax/libs/jquery/3.1.1/jquery.js"&gt;&lt;/script&gt;
+    &lt;script src="https://cdnjs.cloudflare.com/ajax/libs/lodash.js/3.10.1/lodash.js"&gt;&lt;/script&gt;
+    &lt;script src="https://cdnjs.cloudflare.com/ajax/libs/backbone.js/1.3.3/backbone.js"&gt;&lt;/script&gt;
+    &lt;script src="https://cdnjs.cloudflare.com/ajax/libs/jointjs/2.1.0/joint.js"&gt;&lt;/script&gt;
 
-    var paper = new joint.dia.Paper({
-        el: $('#myholder'),
-        width: 600,
-        height: 200,
-        model: graph,
-        gridSize: 1
-    });
+    &lt;!-- code --&gt;
+    &lt;script type="text/javascript"&gt;
 
-    var rect = new joint.shapes.basic.Rect({
-        position: { x: 100, y: 30 },
-        size: { width: 100, height: 30 },
-        attrs: { rect: { fill: 'blue' }, text: { text: 'my box', fill: 'white' } }
-    });
+        var graph = new joint.dia.Graph;
 
-    var rect2 = rect.clone();
-    rect2.translate(300);
+        var paper = new joint.dia.Paper({
+            el: document.getElementById('myholder'),
+            model: graph,
+            width: 600,
+            height: 100,
+            gridSize: 1
+        });
 
-    var link = new joint.dia.Link({
-        source: { id: rect.id },
-        target: { id: rect2.id }
-    });
+        var rect = new joint.shapes.standard.Rectangle();
+        rect.position(100, 30);
+        rect.resize(100, 40);
+        rect.attr({
+            body: {
+                fill: 'blue'
+            },
+            label: {
+                text: 'Hello',
+                fill: 'white'
+            }
+        });
+        rect.addTo(graph);
 
-    graph.addCells([rect, rect2, link]);
+        var rect2 = rect.clone();
+        rect2.translate(300, 0);
+        rect2.attr('label/text', 'World!');
+        rect2.addTo(graph);
 
-  &lt;/script&gt;
+        var link = new joint.shapes.standard.Link();
+        link.source(rect);
+        link.target(rect2);
+        link.addTo(graph);
+
+    &lt;/script&gt;
 &lt;/body&gt;
 &lt;/html&gt;</code></pre>
 
-            <div class="paper" id="paper-basic"></div>
+            <p>Even though the code is quite short, it creates a fully interactive JointJS diagram.
+                The program does everything a JointJS application needs to do in order to produce a visual output:</p>
+
+            <ul>
+                <li><a href="installation.html">Include JointJS and its dependencies</a></li>
+                <li><a href="graph-and-paper.html">Define a graph and a paper</a></li>
+                <li><a href="elements.html">Create two rectangular elements</a></li>
+                <li><a href="links.html">Create one link to connect the elements</a></li>
+            </ul>
+
+            <p>We will look at each of these steps in turn.
+                Use this list as an index of the basic tutorial topics.</p>
+
+            <p><a href="installation.html">First, we need to make sure we have JointJS installed and ready to
+                use.</a></p>
 
         </div><!--end tutorial-->
 
         <script src="../node_modules/prismjs/prism.js"></script>
+        <script src="../node_modules/prismjs/plugins/line-numbers/prism-line-numbers.js"></script>
+
         <script src="js/hello-world.js"></script>
     </body>
 </html>

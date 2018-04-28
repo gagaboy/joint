@@ -1,9 +1,10 @@
-joint.connectors.jumpover = (function(_, g) {
+joint.connectors.jumpover = (function(_, g, util) {
 
     // default size of jump if not specified in options
     var JUMP_SIZE = 5;
 
     // available jump types
+    // first one taken as default
     var JUMP_TYPES = ['arc', 'gap', 'cubic'];
 
     // takes care of math. error for case when jump is too close to end of line
@@ -13,15 +14,15 @@ joint.connectors.jumpover = (function(_, g) {
     var IGNORED_CONNECTORS = ['smooth'];
 
     /**
-     * Transform start/end and vertices into series of lines
+     * Transform start/end and route into series of lines
      * @param {g.point} sourcePoint start point
      * @param {g.point} targetPoint end point
-     * @param {g.point[]} vertices optional list of vertices
+     * @param {g.point[]} route optional list of route
      * @return {g.line[]} [description]
      */
-    function createLines(sourcePoint, targetPoint, vertices) {
+    function createLines(sourcePoint, targetPoint, route) {
         // make a flattened array of all points
-        var points = [].concat(sourcePoint, vertices, targetPoint);
+        var points = [].concat(sourcePoint, route, targetPoint);
         return points.reduce(function(resultLines, point, idx) {
             // if there is a next point, make a line with it
             var nextPoint = points[idx + 1];
@@ -76,9 +77,13 @@ joint.connectors.jumpover = (function(_, g) {
      * @return {g.point[]} list of intersection points
      */
     function findLineIntersections(line, crossCheckLines) {
-        return _(crossCheckLines).map(function(crossCheckLine) {
-            return line.intersection(crossCheckLine);
-        }).compact().value();
+        return util.toArray(crossCheckLines).reduce(function(res, crossCheckLine) {
+            var intersection = line.intersection(crossCheckLine);
+            if (intersection) {
+                res.push(intersection);
+            }
+            return res;
+        }, []);
     }
 
     /**
@@ -162,58 +167,102 @@ joint.connectors.jumpover = (function(_, g) {
      * @return {string}
      */
     function buildPath(lines, jumpSize, jumpType) {
+
+        var path = new g.Path();
+        var segment;
+
         // first move to the start of a first line
-        var start = ['M', lines[0].start.x, lines[0].start.y];
+        segment = g.Path.createSegment('M', lines[0].start);
+        path.appendSegment(segment);
 
         // make a paths from lines
-        var paths = _(lines).map(function(line) {
+        joint.util.toArray(lines).forEach(function(line, index) {
+
             if (line.isJump) {
-                var diff;
-                if (jumpType === 'arc') {
-                    diff = line.start.difference(line.end);
+                var angle, diff;
+
+                var control1, control2;
+
+                if (jumpType === 'arc') { // approximates semicircle with 2 curves
+                    angle = -90;
                     // determine rotation of arc based on difference between points
-                    var xAxisRotate = Number(diff.x < 0 && diff.y < 0);
-                    // for a jump line we create an arc instead
-                    return ['A', jumpSize, jumpSize, 0, 0, xAxisRotate, line.end.x, line.end.y];
-                } else if (jumpType === 'gap') {
-                    return ['M', line.end.x, line.end.y];
-                } else if (jumpType === 'cubic') {
                     diff = line.start.difference(line.end);
-                    var angle = line.start.theta(line.end);
+                    // make sure the arc always points up (or right)
+                    var xAxisRotate = Number((diff.x < 0) || (diff.x === 0 && diff.y < 0));
+                    if (xAxisRotate) angle += 180;
+
+                    var midpoint = line.midpoint();
+                    var centerLine = new g.Line(midpoint, line.end).rotate(midpoint, angle);
+
+                    var halfLine;
+
+                    // first half
+                    halfLine = new g.Line(line.start, midpoint);
+
+                    control1 = halfLine.pointAt(2 / 3).rotate(line.start, angle);
+                    control2 = centerLine.pointAt(1 / 3).rotate(centerLine.end, -angle);
+
+                    segment = g.Path.createSegment('C', control1, control2, centerLine.end);
+                    path.appendSegment(segment);
+
+                    // second half
+                    halfLine = new g.Line(midpoint, line.end);
+
+                    control1 = centerLine.pointAt(1 / 3).rotate(centerLine.end, angle);
+                    control2 = halfLine.pointAt(1 / 3).rotate(line.end, -angle);
+
+                    segment = g.Path.createSegment('C', control1, control2, line.end);
+                    path.appendSegment(segment);
+
+                } else if (jumpType === 'gap') {
+                    segment = g.Path.createSegment('M', line.end);
+                    path.appendSegment(segment);
+
+                } else if (jumpType === 'cubic') { // approximates semicircle with 1 curve
+                    angle = line.start.theta(line.end);
+
                     var xOffset = jumpSize * 0.6;
                     var yOffset = jumpSize * 1.35;
-                    // determine rotation of curve based on difference between points
-                    if (diff.x < 0 && diff.y < 0) {
-                        yOffset *= -1;
-                    }
-                    var controlStartPoint = g.point(line.start.x + xOffset, line.start.y + yOffset).rotate(line.start, angle);
-                    var controlEndPoint = g.point(line.end.x - xOffset, line.end.y + yOffset).rotate(line.end, angle);
-                    // create a cubic bezier curve
-                    return ['C', controlStartPoint.x, controlStartPoint.y, controlEndPoint.x, controlEndPoint.y, line.end.x, line.end.y];
-                }
-            }
-            return ['L', line.end.x, line.end.y];
-        }).flatten().value();
 
-        return [].concat(start, paths).join(' ');
+                    // determine rotation of arc based on difference between points
+                    diff = line.start.difference(line.end);
+                    // make sure the arc always points up (or right)
+                    xAxisRotate = Number((diff.x < 0) || (diff.x === 0 && diff.y < 0));
+                    if (xAxisRotate) yOffset *= -1;
+
+                    control1 = g.Point(line.start.x + xOffset, line.start.y + yOffset).rotate(line.start, angle);
+                    control2 = g.Point(line.end.x - xOffset, line.end.y + yOffset).rotate(line.end, angle);
+
+                    segment = g.Path.createSegment('C', control1, control2, line.end);
+                    path.appendSegment(segment);
+                }
+
+            } else {
+                segment = g.Path.createSegment('L', line.end);
+                path.appendSegment(segment);
+            }
+        });
+
+        return path;
     }
 
     /**
      * Actual connector function that will be run on every update.
      * @param {g.point} sourcePoint start point of this link
      * @param {g.point} targetPoint end point of this link
-     * @param {g.point[]} vertices of this link
-     * @param {object} opts options
+     * @param {g.point[]} route of this link
+     * @param {object} opt options
      * @property {number} size optional size of a jump arc
      * @return {string} created `D` attribute of SVG path
      */
-    return function(sourcePoint, targetPoint, vertices, opts) { // eslint-disable-line max-params
+    return function(sourcePoint, targetPoint, route, opt) { // eslint-disable-line max-params
 
         setupUpdating(this);
 
-        var jumpSize = opts.size || JUMP_SIZE;
-        var jumpType = opts.jump && ('' + opts.jump).toLowerCase();
-        var ignoreConnectors = opts.ignoreConnectors || IGNORED_CONNECTORS;
+        var raw = opt.raw;
+        var jumpSize = opt.size || JUMP_SIZE;
+        var jumpType = opt.jump && ('' + opt.jump).toLowerCase();
+        var ignoreConnectors = opt.ignoreConnectors || IGNORED_CONNECTORS;
 
         // grab the first jump type as a default if specified one is invalid
         if (JUMP_TYPES.indexOf(jumpType) === -1) {
@@ -227,7 +276,7 @@ joint.connectors.jumpover = (function(_, g) {
         // there is just one link, draw it directly
         if (allLinks.length === 1) {
             return buildPath(
-                createLines(sourcePoint, targetPoint, vertices),
+                createLines(sourcePoint, targetPoint, route),
                 jumpSize, jumpType
             );
         }
@@ -242,7 +291,7 @@ joint.connectors.jumpover = (function(_, g) {
             var connector = link.get('connector') || defaultConnector;
 
             // avoid jumping over links with connector type listed in `ignored connectors`.
-            if (_.contains(ignoreConnectors, connector.name)) {
+            if (util.toArray(ignoreConnectors).includes(connector.name)) {
                 return false;
             }
             // filter out links that are above this one and  have the same connector type
@@ -262,7 +311,7 @@ joint.connectors.jumpover = (function(_, g) {
         var thisLines = createLines(
             sourcePoint,
             targetPoint,
-            vertices
+            route
         );
 
         // create lines for all other links
@@ -285,13 +334,18 @@ joint.connectors.jumpover = (function(_, g) {
         var jumpingLines = thisLines.reduce(function(resultLines, thisLine) {
             // iterate all links and grab the intersections with this line
             // these are then sorted by distance so the line can be split more easily
-            var intersections = _(links).map(function(link, i) {
+
+            var intersections = links.reduce(function(res, link, i) {
                 // don't intersection with itself
-                if (link === thisModel) {
-                    return null;
+                if (link !== thisModel) {
+
+                    var lineIntersections = findLineIntersections(thisLine, linkLines[i]);
+                    res.push.apply(res, lineIntersections);
                 }
-                return findLineIntersections(thisLine, linkLines[i]);
-            }).flatten().compact().sortBy(_.partial(sortPoints, thisLine.start)).value();
+                return res;
+            }, []).sort(function(a, b) {
+                return sortPoints(thisLine.start, a) - sortPoints(thisLine.start, b);
+            });
 
             if (intersections.length > 0) {
                 // split the line based on found intersection points
@@ -303,6 +357,7 @@ joint.connectors.jumpover = (function(_, g) {
             return resultLines;
         }, []);
 
-        return buildPath(jumpingLines, jumpSize, jumpType);
+        var path = buildPath(jumpingLines, jumpSize, jumpType);
+        return (raw) ? path : path.serialize();
     };
-}(_, g));
+}(_, g, joint.util));

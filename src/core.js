@@ -1,4 +1,3 @@
-
 // Global namespace.
 
 var joint = {
@@ -36,6 +35,18 @@ var joint = {
     // `joint.routers` namespace.
     routers: {},
 
+    // `joint.anchors` namespace.
+    anchors: {},
+
+    // `joint.connectionPoints` namespace.
+    connectionPoints: {},
+
+    // `joint.connectionStrategies` namespace.
+    connectionStrategies: {},
+
+    // `joint.linkTools` namespace.
+    linkTools: {},
+
     // `joint.mvc` namespace.
     mvc: {
         views: {}
@@ -45,7 +56,7 @@ var joint = {
 
         opt = opt || {};
 
-        _.invoke(joint.mvc.views, 'setTheme', theme, opt);
+        joint.util.invoke(joint.mvc.views, 'setTheme', theme, opt);
 
         // Update the default theme on the view prototype.
         joint.mvc.View.prototype.defaultTheme = theme;
@@ -113,7 +124,7 @@ var joint = {
 
         getByPath: function(obj, path, delim) {
 
-            var keys = _.isArray(path) ? path.slice() : path.split(delim || '/');
+            var keys = Array.isArray(path) ? path.slice() : path.split(delim || '/');
             var key;
 
             while (keys.length) {
@@ -129,7 +140,7 @@ var joint = {
 
         setByPath: function(obj, path, value, delim) {
 
-            var keys = _.isArray(path) ? path : path.split(delim || '/');
+            var keys = Array.isArray(path) ? path : path.split(delim || '/');
 
             var diver = obj;
             var i = 0;
@@ -148,7 +159,7 @@ var joint = {
 
             delim = delim || '/';
 
-            var pathArray = _.isArray(path) ? path.slice() : path.split(delim);
+            var pathArray = Array.isArray(path) ? path.slice() : path.split(delim);
 
             var propertyToRemove = pathArray.pop();
             if (pathArray.length > 0) {
@@ -291,7 +302,7 @@ var joint = {
 
             return function(callback, context) {
                 return context
-                    ? raf(_.bind(callback, context))
+                    ? raf(callback.bind(context))
                     : raf(callback);
             };
 
@@ -317,10 +328,11 @@ var joint = {
 
             caf = caf || clearTimeout;
 
-            return client ? _.bind(caf, window) : caf;
+            return client ? caf.bind(window) : caf;
 
         })(),
 
+        // ** Deprecated **
         shapePerimeterConnectionPoint: function(linkView, view, magnet, reference) {
 
             var bbox;
@@ -357,7 +369,7 @@ var joint = {
 
                 spot = V(magnet).findIntersection(reference, linkView.paper.viewport);
                 if (!spot) {
-                    bbox = g.rect(V(magnet).bbox(false, linkView.paper.viewport));
+                    bbox = V(magnet).getBBox({ target: linkView.paper.viewport });
                 }
 
             } else {
@@ -368,18 +380,23 @@ var joint = {
             return spot || bbox.center();
         },
 
+        isPercentage: function(val) {
+
+            return joint.util.isString(val) && val.slice(-1) === '%';
+        },
+
         parseCssNumeric: function(strValue, restrictUnits) {
 
             restrictUnits = restrictUnits || [];
             var cssNumeric = { value: parseFloat(strValue) };
 
-            if (_.isNaN(cssNumeric.value)) {
+            if (Number.isNaN(cssNumeric.value)) {
                 return null;
             }
 
             var validUnitsExp = restrictUnits.join('|');
 
-            if (_.isString(strValue)) {
+            if (joint.util.isString(strValue)) {
                 var matches = new RegExp('(\\d+)(' + validUnitsExp + ')$').exec(strValue);
                 if (!matches) {
                     return null;
@@ -394,13 +411,14 @@ var joint = {
         breakText: function(text, size, styles, opt) {
 
             opt = opt || {};
+            styles = styles || {};
 
             var width = size.width;
             var height = size.height;
 
             var svgDocument = opt.svgDocument || V('svg').node;
-            var textElement = V('<text><tspan></tspan></text>').attr(styles || {}).node;
-            var textSpan = textElement.firstChild;
+            var textSpan = V('tspan').node;
+            var textElement = V('text').attr(styles).append(textSpan).node;
             var textNode = document.createTextNode('');
 
             // Prevent flickering
@@ -422,7 +440,10 @@ var joint = {
                 document.body.appendChild(svgDocument);
             }
 
-            var words = text.split(' ');
+            var separator = opt.separator || ' ';
+            var eol = opt.eol || '\n';
+
+            var words = text.split(separator);
             var full = [];
             var lines = [];
             var p;
@@ -431,6 +452,27 @@ var joint = {
             for (var i = 0, l = 0, len = words.length; i < len; i++) {
 
                 var word = words[i];
+
+                if (!word) continue;
+
+                if (eol && word.indexOf(eol) >= 0) {
+                    // word cotains end-of-line character
+                    if (word.length > 1) {
+                        // separate word and continue cycle
+                        var eolWords = word.split(eol);
+                        for (var j = 0, jl = eolWords.length - 1; j < jl; j++) {
+                            eolWords.splice(2 * j + 1, 0, eol);
+                        }
+                        Array.prototype.splice.apply(words, [i, 1].concat(eolWords));
+                        i--;
+                        len += eolWords.length - 1;
+                    } else {
+                        // creates new line
+                        l++;
+                    }
+                    continue;
+                }
+
 
                 textNode.data = lines[l] ? lines[l] + ' ' + word : word;
 
@@ -554,9 +596,114 @@ var joint = {
                 document.body.removeChild(svgDocument);
             }
 
-            return lines.join('\n');
+            return lines.join(eol);
         },
 
+        // Sanitize HTML
+        // Based on https://gist.github.com/ufologist/5a0da51b2b9ef1b861c30254172ac3c9
+        // Parses a string into an array of DOM nodes.
+        // Then outputs it back as a string.
+        sanitizeHTML: function(html) {
+
+            // Ignores tags that are invalid inside a <div> tag (e.g. <body>, <head>)
+
+            // If documentContext (second parameter) is not specified or given as `null` or `undefined`, a new document is used.
+            // Inline events will not execute when the HTML is parsed; this includes, for example, sending GET requests for images.
+
+            // If keepScripts (last parameter) is `false`, scripts are not executed.
+            var output = $($.parseHTML('<div>' + html + '</div>', null, false));
+
+            output.find('*').each(function() { // for all nodes
+                var currentNode = this;
+
+                $.each(currentNode.attributes, function() { // for all attributes in each node
+                    var currentAttribute = this;
+
+                    var attrName = currentAttribute.name;
+                    var attrValue = currentAttribute.value;
+
+                    // Remove attribute names that start with "on" (e.g. onload, onerror...).
+                    // Remove attribute values that start with "javascript:" pseudo protocol (e.g. `href="javascript:alert(1)"`).
+                    if (attrName.indexOf('on') === 0 || attrValue.indexOf('javascript:') === 0) {
+                        $(currentNode).removeAttr(attrName);
+                    }
+                });
+            });
+
+            return output.html();
+        },
+
+        // Download `blob` as file with `fileName`.
+        // Does not work in IE9.
+        downloadBlob: function(blob, fileName) {
+
+            if (window.navigator.msSaveBlob) { // requires IE 10+
+                // pulls up a save dialog
+                window.navigator.msSaveBlob(blob, fileName);
+
+            } else { // other browsers
+                // downloads directly in Chrome and Safari
+
+                // presents a save/open dialog in Firefox
+                // Firefox bug: `from` field in save dialog always shows `from:blob:`
+                // https://bugzilla.mozilla.org/show_bug.cgi?id=1053327
+
+                var url = window.URL.createObjectURL(blob);
+                var link = document.createElement('a');
+
+                link.href = url;
+                link.download = fileName;
+                document.body.appendChild(link);
+
+                link.click();
+
+                document.body.removeChild(link);
+                window.URL.revokeObjectURL(url); // mark the url for garbage collection
+            }
+        },
+
+        // Download `dataUri` as file with `fileName`.
+        // Does not work in IE9.
+        downloadDataUri: function(dataUri, fileName) {
+
+            var blob = joint.util.dataUriToBlob(dataUri);
+            joint.util.downloadBlob(blob, fileName);
+        },
+
+        // Convert an uri-encoded data component (possibly also base64-encoded) to a blob.
+        dataUriToBlob: function(dataUri) {
+
+            // first, make sure there are no newlines in the data uri
+            dataUri = dataUri.replace(/\s/g, '');
+            dataUri = decodeURIComponent(dataUri);
+
+            var firstCommaIndex = dataUri.indexOf(','); // split dataUri as `dataTypeString`,`data`
+
+            var dataTypeString = dataUri.slice(0, firstCommaIndex); // e.g. 'data:image/jpeg;base64'
+            var mimeString = dataTypeString.split(':')[1].split(';')[0]; // e.g. 'image/jpeg'
+
+            var data = dataUri.slice(firstCommaIndex + 1);
+            var decodedString;
+            if (dataTypeString.indexOf('base64') >= 0) { // data may be encoded in base64
+                decodedString = atob(data); // decode data
+            } else {
+                // convert the decoded string to UTF-8
+                decodedString = unescape(encodeURIComponent(data));
+            }
+            // write the bytes of the string to a typed array
+            var ia = new window.Uint8Array(decodedString.length);
+            for (var i = 0; i < decodedString.length; i++) {
+                ia[i] = decodedString.charCodeAt(i);
+            }
+
+            return new Blob([ia], { type: mimeString }); // return the typed array as Blob
+        },
+
+        // Read an image at `url` and return it as base64-encoded data uri.
+        // The mime type of the image is inferred from the `url` file extension.
+        // If data uri is provided as `url`, it is returned back unchanged.
+        // `callback` is a method with `err` as first argument and `dataUri` as second argument.
+        // Works with IE9.
         imageToDataUri: function(url, callback) {
 
             if (!url || url.substr(0, 'data:'.length) === 'data:') {
@@ -574,7 +721,7 @@ var joint = {
                 }, 0);
             }
 
-            // chrome IE10 IE11
+            // chrome, IE10+
             var modernHandler = function(xhr, callback) {
 
                 if (xhr.status === 200) {
@@ -594,7 +741,6 @@ var joint = {
                 } else {
                     callback(new Error('Failed to load image ' + url));
                 }
-
             };
 
             var legacyHandler = function(xhr, callback) {
@@ -607,7 +753,6 @@ var joint = {
                     }
                     return c.join('');
                 };
-
 
                 if (xhr.status === 200) {
 
@@ -662,7 +807,8 @@ var joint = {
             // Firefox correction
             if (element.ownerSVGElement) {
 
-                var bbox = V(element).bbox();
+                var vel = V(element);
+                var bbox = vel.getBBox({ target: vel.svg() });
 
                 // if FF getBoundingClientRect includes stroke-width, getBBox doesn't.
                 // To unify this across all browsers we need to adjust the final bBox with `stroke-width` value.
@@ -717,37 +863,49 @@ var joint = {
 
             var $element = $(element);
 
-            _.each(attrs, function(attrs, selector) {
+            joint.util.forIn(attrs, function(attrs, selector) {
                 var $elements = $element.find(selector).addBack().filter(selector);
                 // Make a special case for setting classes.
                 // We do not want to overwrite any existing class.
-                if (_.has(attrs, 'class')) {
+                if (joint.util.has(attrs, 'class')) {
                     $elements.addClass(attrs['class']);
-                    attrs = _.omit(attrs, 'class');
+                    attrs = joint.util.omit(attrs, 'class');
                 }
                 $elements.attr(attrs);
             });
         },
 
-        // Return a new object with all for sides (top, bottom, left and right) in it.
+        // Return a new object with all four sides (top, right, bottom, left) in it.
         // Value of each side is taken from the given argument (either number or object).
         // Default value for a side is 0.
         // Examples:
-        // joint.util.normalizeSides(5) --> { top: 5, left: 5, right: 5, bottom: 5 }
-        // joint.util.normalizeSides({ left: 5 }) --> { top: 0, left: 5, right: 0, bottom: 0 }
+        // joint.util.normalizeSides(5) --> { top: 5, right: 5, bottom: 5, left: 5 }
+        // joint.util.normalizeSides({ horizontal: 5 }) --> { top: 0, right: 5, bottom: 0, left: 5 }
+        // joint.util.normalizeSides({ left: 5 }) --> { top: 0, right: 0, bottom: 0, left: 5 }
+        // joint.util.normalizeSides({ horizontal: 10, left: 5 }) --> { top: 0, right: 10, bottom: 0, left: 5 }
+        // joint.util.normalizeSides({ horizontal: 0, left: 5 }) --> { top: 0, right: 0, bottom: 0, left: 5 }
         normalizeSides: function(box) {
 
-            if (Object(box) !== box) {
-                box = box || 0;
-                return { top: box, bottom: box, left: box, right: box };
+            if (Object(box) !== box) { // `box` is not an object
+                var val = 0; // `val` left as 0 if `box` cannot be understood as finite number
+                if (isFinite(box)) val = +box; // actually also accepts string numbers (e.g. '100')
+
+                return { top: val, right: val, bottom: val, left: val };
             }
 
-            return {
-                top: box.top || 0,
-                bottom: box.bottom || 0,
-                left: box.left || 0,
-                right: box.right || 0
-            };
+            // `box` is an object
+            var top, right, bottom, left;
+            top = right = bottom = left = 0;
+
+            if (isFinite(box.vertical)) top = bottom = +box.vertical;
+            if (isFinite(box.horizontal)) right = left = +box.horizontal;
+
+            if (isFinite(box.top)) top = +box.top; // overwrite vertical
+            if (isFinite(box.right)) right = +box.right; // overwrite horizontal
+            if (isFinite(box.bottom)) bottom = +box.bottom; // overwrite vertical
+            if (isFinite(box.left)) left = +box.left; // overwrite horizontal
+
+            return { top: top, right: right, bottom: bottom, left: left };
         },
 
         timing: {
@@ -829,7 +987,7 @@ var joint = {
             },
 
             object: function(a, b) {
-                var s = _.keys(a);
+                var s = Object.keys(a);
                 return function(t) {
                     var i, p;
                     var r = {};
@@ -890,12 +1048,12 @@ var joint = {
 
                 var tpl = '<filter><feFlood flood-color="${color}" flood-opacity="${opacity}" result="colored"/><feMorphology in="SourceAlpha" result="morphedOuter" operator="dilate" radius="${outerRadius}" /><feMorphology in="SourceAlpha" result="morphedInner" operator="dilate" radius="${innerRadius}" /><feComposite result="morphedOuterColored" in="colored" in2="morphedOuter" operator="in"/><feComposite operator="xor" in="morphedOuterColored" in2="morphedInner" result="outline"/><feMerge><feMergeNode in="outline"/><feMergeNode in="SourceGraphic"/></feMerge></filter>';
 
-                var margin = _.isFinite(args.margin) ? args.margin : 2;
-                var width = _.isFinite(args.width) ? args.width : 1;
+                var margin = Number.isFinite(args.margin) ? args.margin : 2;
+                var width = Number.isFinite(args.width) ? args.width : 1;
 
                 return joint.util.template(tpl)({
                     color: args.color || 'blue',
-                    opacity: _.isFinite(args.opacity) ? args.opacity : 1,
+                    opacity: Number.isFinite(args.opacity) ? args.opacity : 1,
                     outerRadius: margin + width,
                     innerRadius: margin
                 });
@@ -911,9 +1069,9 @@ var joint = {
 
                 return joint.util.template(tpl)({
                     color: args.color || 'red',
-                    width: _.isFinite(args.width) ? args.width : 1,
-                    blur: _.isFinite(args.blur) ? args.blur : 0,
-                    opacity: _.isFinite(args.opacity) ? args.opacity : 1
+                    width: Number.isFinite(args.width) ? args.width : 1,
+                    blur: Number.isFinite(args.blur) ? args.blur : 0,
+                    opacity: Number.isFinite(args.opacity) ? args.opacity : 1
                 });
             },
 
@@ -921,10 +1079,10 @@ var joint = {
             // `y` ... vertical blur (optional)
             blur: function(args) {
 
-                var x = _.isFinite(args.x) ? args.x : 2;
+                var x = Number.isFinite(args.x) ? args.x : 2;
 
                 return joint.util.template('<filter><feGaussianBlur stdDeviation="${stdDeviation}"/></filter>')({
-                    stdDeviation: _.isFinite(args.y) ? [x, args.y] : x
+                    stdDeviation: Number.isFinite(args.y) ? [x, args.y] : x
                 });
             },
 
@@ -942,16 +1100,16 @@ var joint = {
                 return joint.util.template(tpl)({
                     dx: args.dx || 0,
                     dy: args.dy || 0,
-                    opacity: _.isFinite(args.opacity) ? args.opacity : 1,
+                    opacity: Number.isFinite(args.opacity) ? args.opacity : 1,
                     color: args.color || 'black',
-                    blur: _.isFinite(args.blur) ? args.blur : 4
+                    blur: Number.isFinite(args.blur) ? args.blur : 4
                 });
             },
 
             // `amount` ... the proportion of the conversion. A value of 1 is completely grayscale. A value of 0 leaves the input unchanged.
             grayscale: function(args) {
 
-                var amount = _.isFinite(args.amount) ? args.amount : 1;
+                var amount = Number.isFinite(args.amount) ? args.amount : 1;
 
                 return joint.util.template('<filter><feColorMatrix type="matrix" values="${a} ${b} ${c} 0 0 ${d} ${e} ${f} 0 0 ${g} ${b} ${h} 0 0 0 0 0 1 0"/></filter>')({
                     a: 0.2126 + 0.7874 * (1 - amount),
@@ -968,7 +1126,7 @@ var joint = {
             // `amount` ... the proportion of the conversion. A value of 1 is completely sepia. A value of 0 leaves the input unchanged.
             sepia: function(args) {
 
-                var amount = _.isFinite(args.amount) ? args.amount : 1;
+                var amount = Number.isFinite(args.amount) ? args.amount : 1;
 
                 return joint.util.template('<filter><feColorMatrix type="matrix" values="${a} ${b} ${c} 0 0 ${d} ${e} ${f} 0 0 ${g} ${h} ${i} 0 0 0 0 0 1 0"/></filter>')({
                     a: 0.393 + 0.607 * (1 - amount),
@@ -986,7 +1144,7 @@ var joint = {
             // `amount` ... the proportion of the conversion. A value of 0 is completely un-saturated. A value of 1 leaves the input unchanged.
             saturate: function(args) {
 
-                var amount = _.isFinite(args.amount) ? args.amount : 1;
+                var amount = Number.isFinite(args.amount) ? args.amount : 1;
 
                 return joint.util.template('<filter><feColorMatrix type="saturate" values="${amount}"/></filter>')({
                     amount: 1 - amount
@@ -1004,7 +1162,7 @@ var joint = {
             // `amount` ... the proportion of the conversion. A value of 1 is completely inverted. A value of 0 leaves the input unchanged.
             invert: function(args) {
 
-                var amount = _.isFinite(args.amount) ? args.amount : 1;
+                var amount = Number.isFinite(args.amount) ? args.amount : 1;
 
                 return joint.util.template('<filter><feComponentTransfer><feFuncR type="table" tableValues="${amount} ${amount2}"/><feFuncG type="table" tableValues="${amount} ${amount2}"/><feFuncB type="table" tableValues="${amount} ${amount2}"/></feComponentTransfer></filter>')({
                     amount: amount,
@@ -1016,14 +1174,14 @@ var joint = {
             brightness: function(args) {
 
                 return joint.util.template('<filter><feComponentTransfer><feFuncR type="linear" slope="${amount}"/><feFuncG type="linear" slope="${amount}"/><feFuncB type="linear" slope="${amount}"/></feComponentTransfer></filter>')({
-                    amount: _.isFinite(args.amount) ? args.amount : 1
+                    amount: Number.isFinite(args.amount) ? args.amount : 1
                 });
             },
 
             // `amount` ... proportion of the conversion. A value of 0 will create an image that is completely black. A value of 1 leaves the input unchanged.
             contrast: function(args) {
 
-                var amount = _.isFinite(args.amount) ? args.amount : 1;
+                var amount = Number.isFinite(args.amount) ? args.amount : 1;
 
                 return joint.util.template('<filter><feComponentTransfer><feFuncR type="linear" slope="${amount}" intercept="${amount2}"/><feFuncG type="linear" slope="${amount}" intercept="${amount2}"/><feFuncB type="linear" slope="${amount}" intercept="${amount2}"/></feComponentTransfer></filter>')({
                     amount: amount,
@@ -1245,7 +1403,7 @@ var joint = {
 
             prefix: function(value, precision) {
 
-                var prefixes = _.map(['y', 'z', 'a', 'f', 'p', 'n', 'µ', 'm', '', 'k', 'M', 'G', 'T', 'P', 'E', 'Z', 'Y'], function(d, i) {
+                var prefixes = ['y', 'z', 'a', 'f', 'p', 'n', 'µ', 'm', '', 'k', 'M', 'G', 'T', 'P', 'E', 'Z', 'Y'].map(function(d, i) {
                     var k = Math.pow(10, Math.abs(8 - i) * 3);
                     return {
                         scale: i > 8 ? function(d) { return d / k; } : function(d) { return d * k; },
@@ -1281,29 +1439,30 @@ var joint = {
 
                 return html.replace(regex, function(match) {
 
-                    var args = Array.prototype.slice.call(arguments);
-                    var attr = _.find(args.slice(1, 4), function(_attr) {
+                    var args = Array.from(arguments);
+                    var attr = args.slice(1, 4).find(function(_attr) {
                         return !!_attr;
                     });
 
                     var attrArray = attr.split('.');
                     var value = data[attrArray.shift()];
 
-                    while (!_.isUndefined(value) && attrArray.length) {
+                    while (value !== undefined && attrArray.length) {
                         value = value[attrArray.shift()];
                     }
 
-                    return !_.isUndefined(value) ? value : '';
+                    return value !== undefined ? value : '';
                 });
             };
         },
 
         /**
-         * @param {Element=} el Element, which content is intent to display in full-screen mode, 'document.body' is default.
+         * @param {Element=} el Element, which content is intent to display in full-screen mode, 'window.top.document.body' is default.
          */
         toggleFullScreen: function(el) {
 
-            el = el || document.body;
+            var topDocument = window.top.document;
+            el = el || topDocument.body;
 
             function prefixedResult(el, prop) {
 
@@ -1311,15 +1470,15 @@ var joint = {
                 for (var i = 0; i < prefixes.length; i++) {
                     var prefix = prefixes[i];
                     var propName = prefix ? (prefix + prop) : (prop.substr(0, 1).toLowerCase() + prop.substr(1));
-                    if (!_.isUndefined(el[propName])) {
-                        return _.isFunction(el[propName]) ? el[propName]() : el[propName];
+                    if (el[propName] !== undefined) {
+                        return joint.util.isFunction(el[propName]) ? el[propName]() : el[propName];
                     }
                 }
             }
 
-            if (prefixedResult(document, 'FullscreenElement') || prefixedResult(document, 'FullScreenElement')) {
-                prefixedResult(document, 'ExitFullscreen') || // Spec.
-                prefixedResult(document, 'CancelFullScreen'); // Firefox
+            if (prefixedResult(topDocument, 'FullscreenElement') || prefixedResult(topDocument, 'FullScreenElement')) {
+                prefixedResult(topDocument, 'ExitFullscreen') || // Spec.
+                prefixedResult(topDocument, 'CancelFullScreen'); // Firefox
             } else {
                 prefixedResult(el, 'RequestFullscreen') || // Spec.
                 prefixedResult(el, 'RequestFullScreen'); // Firefox
@@ -1330,7 +1489,7 @@ var joint = {
 
             if (!className) return className;
 
-            return _.map(className.toString().split(' '), function(_className) {
+            return className.toString().split(' ').map(function(_className) {
 
                 if (_className.substr(0, joint.config.classNamePrefix.length) !== joint.config.classNamePrefix) {
                     _className = joint.config.classNamePrefix + _className;
@@ -1345,7 +1504,7 @@ var joint = {
 
             if (!className) return className;
 
-            return _.map(className.toString().split(' '), function(_className) {
+            return className.toString().split(' ').map(function(_className) {
 
                 if (_className.substr(0, joint.config.classNamePrefix.length) === joint.config.classNamePrefix) {
                     _className = _className.substr(joint.config.classNamePrefix.length);
@@ -1358,7 +1517,7 @@ var joint = {
 
         wrapWith: function(object, methods, wrapper) {
 
-            if (_.isString(wrapper)) {
+            if (joint.util.isString(wrapper)) {
 
                 if (!joint.util.wrappers[wrapper]) {
                     throw new Error('Unknown wrapper: "' + wrapper + '"');
@@ -1367,11 +1526,11 @@ var joint = {
                 wrapper = joint.util.wrappers[wrapper];
             }
 
-            if (!_.isFunction(wrapper)) {
+            if (!joint.util.isFunction(wrapper)) {
                 throw new Error('Wrapper must be a function.');
             }
 
-            _.each(methods, function(method) {
+            this.toArray(methods).forEach(function(method) {
                 object[method] = wrapper(object[method]);
             });
         },
@@ -1391,16 +1550,20 @@ var joint = {
 
                 return function() {
 
-                    var args = Array.prototype.slice.call(arguments);
-                    var cells = args.length > 0 && _.first(args) || [];
-                    var opt = args.length > 1 && _.last(args) || {};
+                    var args = Array.from(arguments);
+                    var n = args.length;
+                    var cells = n > 0 && args[0] || [];
+                    var opt = n > 1 && args[n - 1] || {};
 
-                    if (!_.isArray(cells)) {
+                    if (!Array.isArray(cells)) {
 
                         if (opt instanceof joint.dia.Cell) {
                             cells = args;
                         } else if (cells instanceof joint.dia.Cell) {
-                            cells = args.length > 1 ? _.initial(args) : args;
+                            if (args.length > 1) {
+                                args.pop();
+                            }
+                            cells = args;
                         }
                     }
 
@@ -1411,6 +1574,134 @@ var joint = {
                     return fn.call(this, cells, opt);
                 };
             }
+        },
+
+        parseDOMJSON: function(json, namespace) {
+
+            var selectors = {};
+            var svgNamespace = V.namespace.xmlns;
+            var ns = namespace || svgNamespace;
+            var fragment = document.createDocumentFragment();
+            var queue = [json, fragment, ns];
+            while (queue.length > 0) {
+                ns = queue.pop();
+                var parentNode = queue.pop();
+                var siblingsDef = queue.pop();
+                for (var i = 0, n = siblingsDef.length; i < n; i++) {
+                    var nodeDef = siblingsDef[i];
+                    // TagName
+                    if (!nodeDef.hasOwnProperty('tagName')) throw new Error('json-dom-parser: missing tagName');
+                    var tagName = nodeDef.tagName;
+                    // Namespace URI
+                    if (nodeDef.hasOwnProperty('namespaceURI')) ns = nodeDef.namespaceURI;
+                    var node = document.createElementNS(ns, tagName);
+                    var svg = (ns === svgNamespace);
+                    var wrapper = (svg) ? V : $;
+                    // Attributes
+                    var attributes = nodeDef.attributes;
+                    if (attributes) wrapper(node).attr(attributes);
+                    // Style
+                    var style = nodeDef.style;
+                    if (style) $(node).css(style);
+                    // ClassName
+                    if (nodeDef.hasOwnProperty('className')) {
+                        var className = nodeDef.className;
+                        if (svg) {
+                            node.className.baseVal = className;
+                        } else {
+                            node.className = className;
+                        }
+                    }
+                    // Selector
+                    if (nodeDef.hasOwnProperty('selector')) {
+                        var nodeSelector = nodeDef.selector;
+                        if (selectors[nodeSelector]) throw new Error('json-dom-parser: selector must be unique');
+                        selectors[nodeSelector] = node;
+                        wrapper(node).attr('joint-selector', nodeSelector);
+                    }
+                    parentNode.appendChild(node);
+                    // Children
+                    var childrenDef = nodeDef.children;
+                    if (Array.isArray(childrenDef)) queue.push(childrenDef, node, ns);
+                }
+            }
+            return {
+                fragment: fragment,
+                selectors: selectors
+            }
+        },
+
+        // lodash 3 vs 4 incompatible
+        sortedIndex: _.sortedIndexBy || _.sortedIndex,
+        uniq: _.uniqBy || _.uniq,
+        uniqueId: _.uniqueId,
+        sortBy: _.sortBy,
+        isFunction: _.isFunction,
+        result: _.result,
+        union: _.union,
+        invoke: _.invokeMap || _.invoke,
+        difference: _.difference,
+        intersection: _.intersection,
+        omit: _.omit,
+        pick: _.pick,
+        has: _.has,
+        bindAll: _.bindAll,
+        assign: _.assign,
+        defaults: _.defaults,
+        defaultsDeep: _.defaultsDeep,
+        isPlainObject: _.isPlainObject,
+        isEmpty: _.isEmpty,
+        isEqual: _.isEqual,
+        noop: function() {},
+        cloneDeep: _.cloneDeep,
+        toArray: _.toArray,
+        flattenDeep: _.flattenDeep,
+        camelCase: _.camelCase,
+        groupBy: _.groupBy,
+        forIn: _.forIn,
+        without: _.without,
+        debounce: _.debounce,
+        clone: _.clone,
+
+        isBoolean: function(value) {
+            var toString = Object.prototype.toString;
+            return value === true || value === false || (!!value && typeof value === 'object' && toString.call(value) === '[object Boolean]');
+        },
+
+        isObject: function(value) {
+            return !!value && (typeof value === 'object' || typeof value === 'function');
+        },
+
+        isNumber: function(value) {
+            var toString = Object.prototype.toString;
+            return typeof value === 'number' || (!!value && typeof value === 'object' && toString.call(value) === '[object Number]');
+        },
+
+        isString: function(value) {
+            var toString = Object.prototype.toString;
+            return typeof value === 'string' || (!!value && typeof value === 'object' && toString.call(value) === '[object String]');
+        },
+
+        merge: function() {
+            if (_.mergeWith) {
+                var args = Array.from(arguments);
+                var last = args[args.length - 1];
+
+                var customizer =  this.isFunction(last) ? last : this.noop;
+                args.push(function(a,b) {
+                    var customResult = customizer(a, b);
+                    if (customResult !== undefined) {
+                        return customResult;
+                    }
+
+                    if (Array.isArray(a) && !Array.isArray(b)) {
+                        return b;
+                    }
+                });
+
+                return _.mergeWith.apply(this, args)
+            }
+            return _.merge.apply(this, arguments);
         }
     }
 };

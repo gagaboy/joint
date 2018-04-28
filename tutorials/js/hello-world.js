@@ -1,32 +1,36 @@
-(function basic() {
+(function helloWorld() {
 
     var graph = new joint.dia.Graph;
+
     var paper = new joint.dia.Paper({
-        el: $('#paper-basic'),
+        el: document.getElementById('paper-hello-world'),
+        model: graph,
         width: 600,
         height: 100,
-        model: graph,
         gridSize: 1
     });
-    var rect = new joint.shapes.basic.Rect({
-        position: { x: 100, y: 30 },
-        size: { width: 100, height: 30 },
-        attrs: { rect: { fill: 'blue' }, text: { text: 'my box', fill: 'white' } }
+
+    var rect = new joint.shapes.standard.Rectangle();
+    rect.position(100, 30);
+    rect.resize(100, 40);
+    rect.attr({
+        body: {
+            fill: 'blue'
+        },
+        label: {
+            text: 'Hello',
+            fill: 'white'
+        }
     });
+    rect.addTo(graph);
+
     var rect2 = rect.clone();
-    rect2.translate(300);
-    
-    var link = new joint.dia.Link({
-        source: { id: rect.id },
-        target: { id: rect2.id }
-    });
-    graph.addCells([rect, rect2, link]);
+    rect2.translate(300, 0);
+    rect2.attr('label/text', 'World!');
+    rect2.addTo(graph);
 
-    graph.on('all', function(eventName, cell) {
-        console.log(arguments);
-    });
-
-    rect.on('change:position', function(element) {
-        console.log(element.id, ':', element.get('position'));
-    });
+    var link = new joint.shapes.standard.Link();
+    link.source(rect);
+    link.target(rect2);
+    link.addTo(graph);
 }());

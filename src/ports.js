@@ -1,8 +1,8 @@
-(function(joint, _) {
+(function(joint, _, util) {
 
     var PortData = function(data) {
 
-        var clonedData = _.cloneDeep(data) || {};
+        var clonedData = util.cloneDeep(data) || {};
         this.ports = [];
         this.groups = {};
         this.portLayoutNamespace = joint.layout.Port;
@@ -23,7 +23,7 @@
 
         getPortsByGroup: function(groupName) {
 
-            return _.filter(this.ports, function(port) {
+            return this.ports.filter(function(port) {
                 return port.group === groupName;
             });
         },
@@ -41,12 +41,19 @@
             }
 
             var groupArgs = groupPosition.args || {};
-            var portsArgs = _.pluck(ports, 'position.args');
+            var portsArgs = ports.map(function(port) {
+                return port && port.position && port.position.args;
+            });
             var groupPortTransformations = namespace[groupPositionName](portsArgs, elBBox, groupArgs);
 
-            return _.transform(groupPortTransformations, _.bind(function(result, portTransformation, index) {
-                var port = ports[index];
-                result.push({
+            var accumulator = {
+                ports: ports,
+                result: []
+            };
+
+            util.toArray(groupPortTransformations).reduce(function(res, portTransformation, index) {
+                var port = res.ports[index];
+                res.result.push({
                     portId: port.id,
                     portTransformation: portTransformation,
                     labelTransformation: this._getPortLabelLayout(port, g.Point(portTransformation), elBBox),
@@ -54,7 +61,10 @@
                     portSize: port.size,
                     labelSize: port.label.size
                 });
-            }, this), []);
+                return res;
+            }.bind(this), accumulator);
+
+            return accumulator.result;
         },
 
         _getPortLabelLayout: function(port, portPosition, elBBox) {
@@ -72,41 +82,51 @@
         _init: function(data) {
 
             // prepare groups
-            _.transform(data.groups || {}, _.bind(this._evaluateGroup, this), this.groups);
+            if (util.isObject(data.groups)) {
+                var groups = Object.keys(data.groups);
+                for (var i = 0, n = groups.length; i < n; i++) {
+                    var key = groups[i];
+                    this.groups[key] = this._evaluateGroup(data.groups[key]);
+                }
+            }
+
             // prepare ports
-            _.transform(data.items || [], _.bind(this._evaluatePort, this), this.ports);
+            var ports = util.toArray(data.items);
+            for (var j = 0, m = ports.length; j < m; j++) {
+                this.ports.push(this._evaluatePort(ports[j]));
+            }
         },
 
-        _evaluateGroup: function (resultMap, group, key) {
+        _evaluateGroup: function(group) {
 
-            resultMap[key] = _.merge(group, {
+            return util.merge(group, {
                 position: this._getPosition(group.position, true),
                 label: this._getLabel(group, true)
             });
         },
 
-        _evaluatePort: function(resultArray, port) {
+        _evaluatePort: function(port) {
 
-            var evaluated = _.clone(port);
+            var evaluated = util.assign({}, port);
 
             var group = this.getGroup(port.group);
 
             evaluated.markup = evaluated.markup || group.markup;
-            evaluated.attrs = _.merge({}, group.attrs, evaluated.attrs);
+            evaluated.attrs = util.merge({}, group.attrs, evaluated.attrs);
             evaluated.position = this._createPositionNode(group, evaluated);
-            evaluated.label = _.merge({}, group.label, this._getLabel(evaluated));
+            evaluated.label = util.merge({}, group.label, this._getLabel(evaluated));
             evaluated.z = this._getZIndex(group, evaluated);
-            evaluated.size = _.extend({}, group.size, evaluated.size);
+            evaluated.size = util.assign({}, group.size, evaluated.size);
 
-            resultArray.push(evaluated);
+            return evaluated;
         },
 
         _getZIndex: function(group, port) {
 
-            if (_.isNumber(port.z)) {
+            if (util.isNumber(port.z)) {
                 return port.z;
             }
-            if (_.isNumber(group.z) || group.z === 'auto') {
+            if (util.isNumber(group.z) || group.z === 'auto') {
                 return group.z;
             }
             return 'auto';
@@ -114,7 +134,7 @@
 
         _createPositionNode: function(group, port) {
 
-            return _.merge({
+            return util.merge({
                 name: 'left',
                 args: {}
             }, group.position, { args: port.args });
@@ -125,20 +145,20 @@
             var args = {};
             var positionName;
 
-            if (_.isFunction(position)) {
+            if (util.isFunction(position)) {
                 positionName = 'fn';
                 args.fn = position;
-            } else if (_.isString(position)) {
+            } else if (util.isString(position)) {
                 positionName = position;
-            } else if (_.isUndefined(position)) {
+            } else if (position === undefined) {
                 positionName = setDefault ? 'left' : null;
-            } else if (_.isArray(position)) {
+            } else if (Array.isArray(position)) {
                 positionName = 'absolute';
                 args.x = position[0];
                 args.y = position[1];
-            } else if (_.isObject(position)) {
+            } else if (util.isObject(position)) {
                 positionName = position.name;
-                _.extend(args, position.args);
+                util.assign(args, position.args);
             }
 
             var result = { args: args };
@@ -160,7 +180,7 @@
         }
     };
 
-    _.extend(joint.dia.Element.prototype, {
+    util.assign(joint.dia.Element.prototype, {
 
         _initializePorts: function() {
 
@@ -181,30 +201,30 @@
             var current = this.get('ports') || {};
             var currentItemsMap = {};
 
-            _.each(current.items, function(item) {
+            util.toArray(current.items).forEach(function(item) {
                 currentItemsMap[item.id] = true;
             });
 
             var previous = this.previous('ports') || {};
             var removed = {};
 
-            _.each(previous.items, function(item) {
+            util.toArray(previous.items).forEach(function(item) {
                 if (!currentItemsMap[item.id]) {
                     removed[item.id] = true;
                 }
             });
 
             var graph = this.graph;
-            if (graph && !_.isEmpty(removed)) {
+            if (graph && !util.isEmpty(removed)) {
 
                 var inboundLinks = graph.getConnectedLinks(this, { inbound: true });
-                _.each(inboundLinks, function(link) {
+                inboundLinks.forEach(function(link) {
 
                     if (removed[link.get('target').port]) link.remove();
                 });
 
                 var outboundLinks = graph.getConnectedLinks(this, { outbound: true });
-                _.each(outboundLinks, function(link) {
+                outboundLinks.forEach(function(link) {
 
                     if (removed[link.get('source').port]) link.remove();
                 });
@@ -233,7 +253,7 @@
          */
         getPorts: function() {
 
-            return _.cloneDeep(this.prop('ports/items')) || [];
+            return util.cloneDeep(this.prop('ports/items')) || [];
         },
 
         /**
@@ -242,7 +262,7 @@
          */
         getPort: function(id) {
 
-            return _.cloneDeep(_.find(this.prop('ports/items'), function(port) {
+            return util.cloneDeep(util.toArray(this.prop('ports/items')).find( function(port) {
                 return port.id && port.id === id;
             }));
         },
@@ -255,13 +275,14 @@
 
             var portsMetrics = this._portSettingsData.getGroupPortsMetrics(groupName, g.Rect(this.size()));
 
-            return _.transform(portsMetrics, function(positions, metrics) {
+            return portsMetrics.reduce(function(positions, metrics) {
                 var transformation = metrics.portTransformation;
                 positions[metrics.portId] = {
                     x: transformation.x,
                     y: transformation.y,
                     angle: transformation.angle
                 };
+                return positions;
             }, {});
         },
 
@@ -271,13 +292,15 @@
          */
         getPortIndex: function(port) {
 
-            var id = _.isObject(port) ? port.id : port;
+            var id = util.isObject(port) ? port.id : port;
 
             if (!this._isValidPortId(id)) {
                 return -1;
             }
 
-            return _.findIndex(this.prop('ports/items'), { id: id });
+            return util.toArray(this.prop('ports/items')).findIndex(function(item) {
+                return item.id === id;
+            });
         },
 
         /**
@@ -287,11 +310,11 @@
          */
         addPort: function(port, opt) {
 
-            if (!_.isObject(port) || _.isArray(port)) {
+            if (!util.isObject(port) || Array.isArray(port)) {
                 throw new Error('Element: addPort requires an object.');
             }
 
-            var ports = _.clone(this.prop('ports/items')) || [];
+            var ports = util.assign([], this.prop('ports/items'));
             ports.push(port);
             this.prop('ports/items', ports, opt);
 
@@ -314,9 +337,9 @@
             }
 
             var args = Array.prototype.slice.call(arguments, 1);
-            if (_.isArray(path)) {
+            if (Array.isArray(path)) {
                 args[0] = ['ports', 'items', index].concat(path);
-            } else if (_.isString(path)) {
+            } else if (util.isString(path)) {
 
                 // Get/set an attribute by a special path syntax that delimits
                 // nested objects by the colon character.
@@ -325,7 +348,7 @@
             } else {
 
                 args = ['ports/items/' + index];
-                if (_.isPlainObject(path)) {
+                if (util.isPlainObject(path)) {
                     args.push(path);
                     args.push(value);
                 }
@@ -340,15 +363,20 @@
 
             var errorMessages = [];
             portsAttr = portsAttr || {};
-            var ports = portsAttr.items || [];
+            var ports = util.toArray(portsAttr.items);
 
-            _.each(ports, function(p) {
+            ports.forEach(function(p) {
+
+                if (typeof p !== 'object') {
+                    errorMessages.push('Element: invalid port ', p);
+                }
+
                 if (!this._isValidPortId(p.id)) {
-                    p.id = joint.util.uuid();
+                    p.id = util.uuid();
                 }
             }, this);
 
-            if (_.uniq(ports, 'id').length !== ports.length) {
+            if (joint.util.uniq(ports, 'id').length !== ports.length) {
                 errorMessages.push('Element: found id duplicities in ports.');
             }
 
@@ -362,13 +390,13 @@
          */
         _isValidPortId: function(id) {
 
-            return !_.isNull(id) && !_.isUndefined(id) && !_.isObject(id);
+            return id !== null && id !== undefined && !util.isObject(id);
         },
 
         addPorts: function(ports, opt) {
 
             if (ports.length) {
-                this.prop('ports/items', (_.clone(this.prop('ports/items')) || []).concat(ports), opt);
+                this.prop('ports/items', util.assign([], this.prop('ports/items')).concat(ports), opt);
             }
 
             return this;
@@ -377,7 +405,7 @@
         removePort: function(port, opt) {
 
             var options = opt || {};
-            var ports = _.clone(this.prop('ports/items'));
+            var ports = util.assign([], this.prop('ports/items'));
 
             var index = this.getPortIndex(port);
 
@@ -415,15 +443,14 @@
 
             if (prevPortData) {
 
-                // _.filter can be replaced with _.differenceBy in lodash 4
-                var added = _.filter(curPortData, function(item) {
-                    if (!_.find(prevPortData, 'id', item.id)) {
+                var added = curPortData.filter(function(item) {
+                    if (!prevPortData.find(function(prevPort) { return prevPort.id === item.id;})) {
                         return item;
                     }
                 });
 
-                var removed = _.filter(prevPortData, function(item) {
-                    if (!_.find(curPortData, 'id', item.id)) {
+                var removed = prevPortData.filter(function(item) {
+                    if (!curPortData.find(function(curPort) { return curPort.id === item.id;})) {
                         return item;
                     }
                 });
@@ -439,11 +466,25 @@
         }
     });
 
-    _.extend(joint.dia.ElementView.prototype, {
+    util.assign(joint.dia.ElementView.prototype, {
 
-        portContainerMarkup: '<g class="joint-port"/>',
-        portMarkup: '<circle class="joint-port-body" r="10" fill="#FFFFFF" stroke="#000000"/>',
-        portLabelMarkup: '<text class="joint-port-label" fill="#000000"/>',
+        portContainerMarkup: 'g',
+        portMarkup: [{
+            tagName: 'circle',
+            selector: 'circle',
+            attributes: {
+                'r': 10,
+                'fill': '#FFFFFF',
+                'stroke': '#000000'
+            }
+        }],
+        portLabelMarkup: [{
+            tagName: 'text',
+            selector: 'text',
+            attributes: {
+                'fill': '#000000'
+            }
+        }],
         /** @type {Object<string, {portElement: Vectorizer, portLabelElement: Vectorizer}>} */
         _portElementsCache: null,
 
@@ -490,26 +531,29 @@
             // references to rendered elements without z-index
             var elementReferences = [];
             var elem = this._getContainerElement();
-            _.each(elem.node.childNodes, function(n) {
-                elementReferences.push(n);
-            });
 
-            var portsGropsByZ = _.groupBy(this.model._portSettingsData.getPorts(), 'z');
+            for (var i = 0, count = elem.node.childNodes.length; i < count; i++) {
+                elementReferences.push(elem.node.childNodes[i]);
+            }
+
+            var portsGropsByZ = util.groupBy(this.model._portSettingsData.getPorts(), 'z');
             var withoutZKey = 'auto';
 
             // render non-z first
-            _.each(portsGropsByZ[withoutZKey], function(port) {
+            util.toArray(portsGropsByZ[withoutZKey]).forEach(function(port) {
                 var portElement = this._getPortElement(port);
                 elem.append(portElement);
                 elementReferences.push(portElement);
             }, this);
 
-            _.each(portsGropsByZ, function(groupPorts, groupName) {
+            var groupNames = Object.keys(portsGropsByZ);
+            for (var k = 0; k < groupNames.length; k++) {
+                var groupName = groupNames[k];
                 if (groupName !== withoutZKey) {
                     var z = parseInt(groupName, 10);
                     this._appendPorts(portsGropsByZ[groupName], z, elementReferences);
                 }
-            }, this);
+            }
 
             this._updatePorts();
         },
@@ -532,7 +576,7 @@
         _appendPorts: function(ports, z, refs) {
 
             var containerElement = this._getContainerElement();
-            var portElements = _.map(ports, this._getPortElement, this);
+            var portElements = util.toArray(ports).map(this._getPortElement, this);
 
             if (refs[z] || z < 0) {
                 V(refs[Math.max(z, 0)]).before(portElements);
@@ -555,6 +599,14 @@
             return this._createPortElement(port);
         },
 
+        findPortNode: function(portId, selector) {
+            var portCache = this._portElementsCache[portId];
+            if (!portCache) return null;
+            var portRoot = portCache.portContentElement.node;
+            var portSelectors = portCache.portContentSelectors;
+            return this.findBySelector(selector, portRoot, portSelectors)[0];
+        },
+
         /**
          * @private
          */
@@ -563,15 +615,15 @@
             // layout ports without group
             this._updatePortGroup(undefined);
             // layout ports with explicit group
-            var groupsNames = _.keys(this.model._portSettingsData.groups);
-            _.each(groupsNames, this._updatePortGroup, this);
+            var groupsNames = Object.keys(this.model._portSettingsData.groups);
+            groupsNames.forEach(this._updatePortGroup, this);
         },
 
         /**
          * @private
          */
         _removePorts: function() {
-            _.invoke(this._portElementsCache, 'portElement.remove');
+            util.invoke(this._portElementsCache, 'portElement.remove');
         },
 
         /**
@@ -581,28 +633,86 @@
          */
         _createPortElement: function(port) {
 
-            var portContentElement = V(this._getPortMarkup(port));
-            var portLabelContentElement = V(this._getPortLabelMarkup(port.label));
 
-            if (portContentElement && portContentElement.length > 1) {
-                throw new Error('ElementView: Invalid port markup - multiple roots.');
+            var portElement;
+            var labelElement;
+
+            var portMarkup = this._getPortMarkup(port);
+            var portSelectors;
+            if (Array.isArray(portMarkup)) {
+                var portDoc = util.parseDOMJSON(portMarkup);
+                var portFragment = portDoc.fragment;
+                if (portFragment.childNodes.length > 1) {
+                    portElement = V('g').append(portFragment);
+                } else {
+                    portElement = V(portFragment.firstChild);
+                }
+                portSelectors = portDoc.selectors;
+            } else {
+                portElement = V(portMarkup);
+                if (Array.isArray(portElement)) {
+                    portElement = V('g').append(portElement);
+                }
             }
 
-            portContentElement.attr({
+            if (!portElement) {
+                throw new Error('ElementView: Invalid port markup.');
+            }
+
+            portElement.attr({
                 'port': port.id,
                 'port-group': port.group
             });
 
-            var portElement = V(this.portContainerMarkup)
-                .append(portContentElement)
-                .append(portLabelContentElement);
+            var labelMarkup = this._getPortLabelMarkup(port.label);
+            var labelSelectors;
+            if (Array.isArray(labelMarkup)) {
+                var labelDoc = util.parseDOMJSON(labelMarkup);
+                var labelFragment = labelDoc.fragment;
+                if (labelFragment.childNodes.length > 1) {
+                    labelElement = V('g').append(labelFragment);
+                } else {
+                    labelElement = V(labelFragment.firstChild);
+                }
+                labelSelectors = labelDoc.selectors;
+            } else {
+                labelElement = V(labelMarkup);
+                if (Array.isArray(labelElement)) {
+                    labelElement = V('g').append(labelElement);
+                }
+            }
+
+            if (!labelElement) {
+                throw new Error('ElementView: Invalid port label markup.');
+            }
+
+            var portContainerSelectors;
+            if (portSelectors && labelSelectors) {
+                for (var key in labelSelectors) {
+                    if (portSelectors[key]) throw new Error('ElementView: selectors within port must be unique.');
+                }
+                portContainerSelectors = util.assign({}, portSelectors, labelSelectors);
+            } else {
+                portContainerSelectors = portSelectors || labelSelectors;
+            }
+
+            var portContainerElement = V(this.portContainerMarkup)
+                .addClass('joint-port')
+                .append([
+                    portElement.addClass('joint-port-body'),
+                    labelElement.addClass('joint-port-label')
+                ]);
 
             this._portElementsCache[port.id] = {
-                portElement: portElement,
-                portLabelElement: portLabelContentElement
+                portElement: portContainerElement,
+                portLabelElement: labelElement,
+                portSelectors: portContainerSelectors,
+                portLabelSelectors: labelSelectors,
+                portContentElement: portElement,
+                portContentSelectors: portSelectors
             };
 
-            return portElement;
+            return portContainerElement;
         },
 
         /**
@@ -621,14 +731,16 @@
                 var portTransformation = metrics.portTransformation;
                 this.applyPortTransform(cached.portElement, portTransformation);
                 this.updateDOMSubtreeAttributes(cached.portElement.node, metrics.portAttrs, {
-                    rootBBox: g.Rect(metrics.portSize)
+                    rootBBox: new g.Rect(metrics.portSize),
+                    selectors: cached.portSelectors
                 });
 
                 var labelTransformation = metrics.labelTransformation;
                 if (labelTransformation) {
                     this.applyPortTransform(cached.portLabelElement, labelTransformation, (-portTransformation.angle || 0));
                     this.updateDOMSubtreeAttributes(cached.portLabelElement.node, labelTransformation.attrs, {
-                        rootBBox: g.Rect(metrics.labelSize)
+                        rootBBox: new g.Rect(metrics.labelSize),
+                        selectors: cached.portLabelSelectors
                     });
                 }
             }
@@ -671,4 +783,4 @@
         }
 
     });
-}(joint, _));
+}(joint, _, joint.util));

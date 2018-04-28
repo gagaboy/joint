@@ -1,45 +1,30 @@
-
-joint.shapes.basic = {};
-
-joint.shapes.basic.Generic = joint.dia.Element.extend({
-
-    defaults: _.defaultsDeep({
-
-        type: 'basic.Generic',
-        attrs: {
-            '.': { fill: '#ffffff', stroke: 'none' }
-        }
-
-    }, joint.dia.Element.prototype.defaults)
+joint.dia.Element.define('basic.Generic', {
+    attrs: {
+        '.': { fill: '#ffffff', stroke: 'none' }
+    }
 });
 
-joint.shapes.basic.Rect = joint.shapes.basic.Generic.extend({
-
-    markup: '<g class="rotatable"><g class="scalable"><rect/></g><text/></g>',
-
-    defaults: _.defaultsDeep({
-
-        type: 'basic.Rect',
-        attrs: {
-            'rect': {
-                fill: '#ffffff',
-                stroke: '#000000',
-                width: 100,
-                height: 60
-            },
-            'text': {
-                fill: '#000000',
-                text: '',
-                'font-size': 14,
-                'ref-x': .5,
-                'ref-y': .5,
-                'text-anchor': 'middle',
-                'y-alignment': 'middle',
-                'font-family': 'Arial, helvetica, sans-serif'
-            }
+joint.shapes.basic.Generic.define('basic.Rect', {
+    attrs: {
+        'rect': {
+            fill: '#ffffff',
+            stroke: '#000000',
+            width: 100,
+            height: 60
+        },
+        'text': {
+            fill: '#000000',
+            text: '',
+            'font-size': 14,
+            'ref-x': .5,
+            'ref-y': .5,
+            'text-anchor': 'middle',
+            'y-alignment': 'middle',
+            'font-family': 'Arial, helvetica, sans-serif'
         }
-
-    }, joint.shapes.basic.Generic.prototype.defaults)
+    }
+}, {
+    markup: '<g class="rotatable"><g class="scalable"><rect/></g><text/></g>'
 });
 
 joint.shapes.basic.TextView = joint.dia.ElementView.extend({
@@ -52,207 +37,169 @@ joint.shapes.basic.TextView = joint.dia.ElementView.extend({
     }
 });
 
-joint.shapes.basic.Text = joint.shapes.basic.Generic.extend({
-
+joint.shapes.basic.Generic.define('basic.Text', {
+    attrs: {
+        'text': {
+            'font-size': 18,
+            fill: '#000000'
+        }
+    }
+}, {
     markup: '<g class="rotatable"><g class="scalable"><text/></g></g>',
-
-    defaults: _.defaultsDeep({
-
-        type: 'basic.Text',
-        attrs: {
-            'text': {
-                'font-size': 18,
-                fill: '#000000'
-            }
-        }
-
-    }, joint.shapes.basic.Generic.prototype.defaults)
 });
 
-joint.shapes.basic.Circle = joint.shapes.basic.Generic.extend({
-
+joint.shapes.basic.Generic.define('basic.Circle', {
+    size: { width: 60, height: 60 },
+    attrs: {
+        'circle': {
+            fill: '#ffffff',
+            stroke: '#000000',
+            r: 30,
+            cx: 30,
+            cy: 30
+        },
+        'text': {
+            'font-size': 14,
+            text: '',
+            'text-anchor': 'middle',
+            'ref-x': .5,
+            'ref-y': .5,
+            'y-alignment': 'middle',
+            fill: '#000000',
+            'font-family': 'Arial, helvetica, sans-serif'
+        }
+    }
+}, {
     markup: '<g class="rotatable"><g class="scalable"><circle/></g><text/></g>',
-
-    defaults: _.defaultsDeep({
-
-        type: 'basic.Circle',
-        size: { width: 60, height: 60 },
-        attrs: {
-            'circle': {
-                fill: '#ffffff',
-                stroke: '#000000',
-                r: 30,
-                cx: 30,
-                cy: 30
-            },
-            'text': {
-                'font-size': 14,
-                text: '',
-                'text-anchor': 'middle',
-                'ref-x': .5,
-                'ref-y': .5,
-                'y-alignment': 'middle',
-                fill: '#000000',
-                'font-family': 'Arial, helvetica, sans-serif'
-            }
-        }
-    }, joint.shapes.basic.Generic.prototype.defaults)
 });
 
-joint.shapes.basic.Ellipse = joint.shapes.basic.Generic.extend({
-
+joint.shapes.basic.Generic.define('basic.Ellipse', {
+    size: { width: 60, height: 40 },
+    attrs: {
+        'ellipse': {
+            fill: '#ffffff',
+            stroke: '#000000',
+            rx: 30,
+            ry: 20,
+            cx: 30,
+            cy: 20
+        },
+        'text': {
+            'font-size': 14,
+            text: '',
+            'text-anchor': 'middle',
+            'ref-x': .5,
+            'ref-y': .5,
+            'y-alignment': 'middle',
+            fill: '#000000',
+            'font-family': 'Arial, helvetica, sans-serif'
+        }
+    }
+}, {
     markup: '<g class="rotatable"><g class="scalable"><ellipse/></g><text/></g>',
-
-    defaults: _.defaultsDeep({
-
-        type: 'basic.Ellipse',
-        size: { width: 60, height: 40 },
-        attrs: {
-            'ellipse': {
-                fill: '#ffffff',
-                stroke: '#000000',
-                rx: 30,
-                ry: 20,
-                cx: 30,
-                cy: 20
-            },
-            'text': {
-                'font-size': 14,
-                text: '',
-                'text-anchor': 'middle',
-                'ref-x': .5,
-                'ref-y': .5,
-                'y-alignment': 'middle',
-                fill: '#000000',
-                'font-family': 'Arial, helvetica, sans-serif'
-            }
-        }
-    }, joint.shapes.basic.Generic.prototype.defaults)
 });
 
-joint.shapes.basic.Polygon = joint.shapes.basic.Generic.extend({
-
+joint.shapes.basic.Generic.define('basic.Polygon', {
+    size: { width: 60, height: 40 },
+    attrs: {
+        'polygon': {
+            fill: '#ffffff',
+            stroke: '#000000'
+        },
+        'text': {
+            'font-size': 14,
+            text: '',
+            'text-anchor': 'middle',
+            'ref-x': .5,
+            'ref-dy': 20,
+            'y-alignment': 'middle',
+            fill: '#000000',
+            'font-family': 'Arial, helvetica, sans-serif'
+        }
+    }
+}, {
     markup: '<g class="rotatable"><g class="scalable"><polygon/></g><text/></g>',
-
-    defaults: _.defaultsDeep({
-
-        type: 'basic.Polygon',
-        size: { width: 60, height: 40 },
-        attrs: {
-            'polygon': {
-                fill: '#ffffff',
-                stroke: '#000000'
-            },
-            'text': {
-                'font-size': 14,
-                text: '',
-                'text-anchor': 'middle',
-                'ref-x': .5,
-                'ref-dy': 20,
-                'y-alignment': 'middle',
-                fill: '#000000',
-                'font-family': 'Arial, helvetica, sans-serif'
-            }
-        }
-    }, joint.shapes.basic.Generic.prototype.defaults)
 });
 
-joint.shapes.basic.Polyline = joint.shapes.basic.Generic.extend({
-
+joint.shapes.basic.Generic.define('basic.Polyline', {
+    size: { width: 60, height: 40 },
+    attrs: {
+        'polyline': {
+            fill: '#ffffff',
+            stroke: '#000000'
+        },
+        'text': {
+            'font-size': 14,
+            text: '',
+            'text-anchor': 'middle',
+            'ref-x': .5,
+            'ref-dy': 20,
+            'y-alignment': 'middle',
+            fill: '#000000',
+            'font-family': 'Arial, helvetica, sans-serif'
+        }
+    }
+}, {
     markup: '<g class="rotatable"><g class="scalable"><polyline/></g><text/></g>',
-
-    defaults: _.defaultsDeep({
-
-        type: 'basic.Polyline',
-        size: { width: 60, height: 40 },
-        attrs: {
-            'polyline': {
-                fill: '#ffffff',
-                stroke: '#000000'
-            },
-            'text': {
-                'font-size': 14,
-                text: '',
-                'text-anchor': 'middle',
-                'ref-x': .5,
-                'ref-dy': 20,
-                'y-alignment': 'middle',
-                fill: '#000000',
-                'font-family': 'Arial, helvetica, sans-serif'
-            }
-        }
-    }, joint.shapes.basic.Generic.prototype.defaults)
 });
 
-joint.shapes.basic.Image = joint.shapes.basic.Generic.extend({
-
+joint.shapes.basic.Generic.define('basic.Image', {
+    attrs: {
+        'text': {
+            'font-size': 14,
+            text: '',
+            'text-anchor': 'middle',
+            'ref-x': .5,
+            'ref-dy': 20,
+            'y-alignment': 'middle',
+            fill: '#000000',
+            'font-family': 'Arial, helvetica, sans-serif'
+        }
+    }
+}, {
     markup: '<g class="rotatable"><g class="scalable"><image/></g><text/></g>',
-
-    defaults: _.defaultsDeep({
-
-        type: 'basic.Image',
-        attrs: {
-            'text': {
-                'font-size': 14,
-                text: '',
-                'text-anchor': 'middle',
-                'ref-x': .5,
-                'ref-dy': 20,
-                'y-alignment': 'middle',
-                fill: '#000000',
-                'font-family': 'Arial, helvetica, sans-serif'
-            }
-        }
-    }, joint.shapes.basic.Generic.prototype.defaults)
 });
 
-joint.shapes.basic.Path = joint.shapes.basic.Generic.extend({
+joint.shapes.basic.Generic.define('basic.Path', {
+    size: { width: 60, height: 60 },
+    attrs: {
+        'path': {
+            fill: '#ffffff',
+            stroke: '#000000'
+        },
+        'text': {
+            'font-size': 14,
+            text: '',
+            'text-anchor': 'middle',
+            'ref': 'path',
+            'ref-x': .5,
+            'ref-dy': 10,
+            fill: '#000000',
+            'font-family': 'Arial, helvetica, sans-serif'
+        }
+    }
 
+}, {
     markup: '<g class="rotatable"><g class="scalable"><path/></g><text/></g>',
-
-    defaults: _.defaultsDeep({
-
-        type: 'basic.Path',
-        size: { width: 60, height: 60 },
-        attrs: {
-            'path': {
-                fill: '#ffffff',
-                stroke: '#000000'
-            },
-            'text': {
-                'font-size': 14,
-                text: '',
-                'text-anchor': 'middle',
-                'ref': 'path',
-                'ref-x': .5,
-                'ref-dy': 10,
-                fill: '#000000',
-                'font-family': 'Arial, helvetica, sans-serif'
-            }
-        }
-    }, joint.shapes.basic.Generic.prototype.defaults)
 });
 
-joint.shapes.basic.Rhombus = joint.shapes.basic.Path.extend({
-
-    defaults: _.defaultsDeep({
-
-        type: 'basic.Rhombus',
-        attrs: {
-            'path': {
-                d: 'M 30 0 L 60 30 30 60 0 30 z'
-            },
-            'text': {
-                'ref-y': .5,
-                'ref-dy': null,
-                'y-alignment': 'middle'
-            }
+joint.shapes.basic.Path.define('basic.Rhombus', {
+    attrs: {
+        'path': {
+            d: 'M 30 0 L 60 30 30 60 0 30 z'
+        },
+        'text': {
+            'ref-y': .5,
+            'ref-dy': null,
+            'y-alignment': 'middle'
         }
-
-    }, joint.shapes.basic.Path.prototype.defaults)
+    }
 });
 
 
+/**
+ * @deprecated use the port api instead
+ */
 // PortsModelInterface is a common interface for shapes that have ports. This interface makes it easy
 // to create new shapes with ports functionality. It is assumed that the new shapes have
 // `inPorts` and `outPorts` array properties. Only these properties should be used to set ports.
@@ -292,7 +239,7 @@ joint.shapes.basic.PortsModelInterface = {
 
         if (this._portSelectors) {
 
-            var newAttrs = _.omit(this.get('attrs'), this._portSelectors);
+            var newAttrs = joint.util.omit(this.get('attrs'), this._portSelectors);
             this.set('attrs', newAttrs, { silent: true });
         }
 
@@ -303,16 +250,16 @@ joint.shapes.basic.PortsModelInterface = {
 
         var attrs = {};
 
-        _.each(this.get('inPorts'), function(portName, index, ports) {
+        joint.util.toArray(this.get('inPorts')).forEach(function(portName, index, ports) {
             var portAttributes = this.getPortAttrs(portName, index, ports.length, '.inPorts', 'in');
-            this._portSelectors = this._portSelectors.concat(_.keys(portAttributes));
-            _.extend(attrs, portAttributes);
+            this._portSelectors = this._portSelectors.concat(Object.keys(portAttributes));
+            joint.util.assign(attrs, portAttributes);
         }, this);
 
-        _.each(this.get('outPorts'), function(portName, index, ports) {
+        joint.util.toArray(this.get('outPorts')).forEach(function(portName, index, ports) {
             var portAttributes = this.getPortAttrs(portName, index, ports.length, '.outPorts', 'out');
-            this._portSelectors = this._portSelectors.concat(_.keys(portAttributes));
-            _.extend(attrs, portAttributes);
+            this._portSelectors = this._portSelectors.concat(Object.keys(portAttributes));
+            joint.util.assign(attrs, portAttributes);
         }, this);
 
         // Silently set `attrs` on the cell so that noone knows the attrs have changed. This makes sure
@@ -366,56 +313,54 @@ joint.shapes.basic.PortsViewInterface = {
 
         var portTemplate = joint.util.template(this.model.portMarkup);
 
-        _.each(_.filter(this.model.ports, function(p) { return p.type === 'in'; }), function(port, index) {
+        var ports = this.model.ports || [];
+        ports.filter(function(p) {
+            return p.type === 'in';
+        }).forEach(function(port, index) {
 
             $inPorts.append(V(portTemplate({ id: index, port: port })).node);
         });
 
-        _.each(_.filter(this.model.ports, function(p) { return p.type === 'out'; }), function(port, index) {
+        ports.filter(function(p) {
+            return p.type === 'out';
+        }).forEach(function(port, index) {
 
             $outPorts.append(V(portTemplate({ id: index, port: port })).node);
         });
     }
 };
 
-joint.shapes.basic.TextBlock = joint.shapes.basic.Generic.extend({
+joint.shapes.basic.Generic.define('basic.TextBlock', {
+    // see joint.css for more element styles
+    attrs: {
+        rect: {
+            fill: '#ffffff',
+            stroke: '#000000',
+            width: 80,
+            height: 100
+        },
+        text: {
+            fill: '#000000',
+            'font-size': 14,
+            'font-family': 'Arial, helvetica, sans-serif'
+        },
+        '.content': {
+            text: '',
+            'ref-x': .5,
+            'ref-y': .5,
+            'y-alignment': 'middle',
+            'x-alignment': 'middle'
+        }
+    },
 
+    content: ''
+}, {
     markup: [
         '<g class="rotatable">',
         '<g class="scalable"><rect/></g>',
         joint.env.test('svgforeignobject') ? '<foreignObject class="fobj"><body xmlns="http://www.w3.org/1999/xhtml"><div class="content"/></body></foreignObject>' : '<text class="content"/>',
         '</g>'
     ].join(''),
-
-    defaults: _.defaultsDeep({
-
-        type: 'basic.TextBlock',
-
-        // see joint.css for more element styles
-        attrs: {
-            rect: {
-                fill: '#ffffff',
-                stroke: '#000000',
-                width: 80,
-                height: 100
-            },
-            text: {
-                fill: '#000000',
-                'font-size': 14,
-                'font-family': 'Arial, helvetica, sans-serif'
-            },
-            '.content': {
-                text: '',
-                'ref-x': .5,
-                'ref-y': .5,
-                'y-alignment': 'middle',
-                'x-alignment': 'middle'
-            }
-        },
-
-        content: ''
-
-    }, joint.shapes.basic.Generic.prototype.defaults),
 
     initialize: function() {
 
@@ -428,12 +373,12 @@ joint.shapes.basic.TextBlock = joint.shapes.basic.Generic.extend({
 
     updateSize: function(cell, size) {
 
-        // Selector `foreignObject' doesn't work accross all browsers, we'r using class selector instead.
+        // Selector `foreignObject' doesn't work across all browsers, we're using class selector instead.
         // We have to clone size as we don't want attributes.div.style to be same object as attributes.size.
         this.attr({
-            '.fobj': _.clone(size),
+            '.fobj': joint.util.assign({}, size),
             div: {
-                style: _.clone(size)
+                style: joint.util.assign({}, size)
             }
         });
     },
@@ -445,7 +390,7 @@ joint.shapes.basic.TextBlock = joint.shapes.basic.Generic.extend({
             // Content element is a <div> element.
             this.attr({
                 '.content': {
-                    html: content
+                    html: joint.util.sanitizeHTML(content)
                 }
             });
 
@@ -472,7 +417,6 @@ joint.shapes.basic.TextBlock = joint.shapes.basic.Generic.extend({
 
         this.updateContent.apply(this, arguments);
     }
-
 });
 
 // TextBlockView implements the fallback for IE when no foreignObject exists and
@@ -502,10 +446,10 @@ joint.shapes.basic.TextBlockView = joint.dia.ElementView.extend({
         if (!joint.env.test('svgforeignobject')) {
 
             // Update everything but the content first.
-            var noTextAttrs = _.omit(renderingOnlyAttrs || model.get('attrs'), '.content');
+            var noTextAttrs = joint.util.omit(renderingOnlyAttrs || model.get('attrs'), '.content');
             joint.dia.ElementView.prototype.update.call(this, model, noTextAttrs);
 
-            if (!renderingOnlyAttrs || _.has(renderingOnlyAttrs, '.content')) {
+            if (!renderingOnlyAttrs || joint.util.has(renderingOnlyAttrs, '.content')) {
                 // Update the content itself.
                 this.updateContent(model, renderingOnlyAttrs);
             }
@@ -519,9 +463,9 @@ joint.shapes.basic.TextBlockView = joint.dia.ElementView.extend({
     updateContent: function(cell, renderingOnlyAttrs) {
 
         // Create copy of the text attributes
-        var textAttrs = _.merge({}, (renderingOnlyAttrs || cell.get('attrs'))['.content']);
+        var textAttrs = joint.util.merge({}, (renderingOnlyAttrs || cell.get('attrs'))['.content']);
 
-        textAttrs = _.omit(textAttrs, 'text');
+        textAttrs = joint.util.omit(textAttrs, 'text');
 
         // Break the content to fit the element size taking into account the attributes
         // set on the model.

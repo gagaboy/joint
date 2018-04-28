@@ -4,20 +4,20 @@
 
 joint.dia.Cell = Backbone.Model.extend({
 
-    // This is the same as Backbone.Model with the only difference that is uses _.merge
+    // This is the same as Backbone.Model with the only difference that is uses joint.util.merge
     // instead of just _.extend. The reason is that we want to mixin attributes set in upper classes.
     constructor: function(attributes, options) {
 
         var defaults;
         var attrs = attributes || {};
-        this.cid = _.uniqueId('c');
+        this.cid = joint.util.uniqueId('c');
         this.attributes = {};
         if (options && options.collection) this.collection = options.collection;
         if (options && options.parse) attrs = this.parse(attrs, options) || {};
-        if ((defaults = _.result(this, 'defaults'))) {
+        if ((defaults = joint.util.result(this, 'defaults'))) {
             //<custom code>
-            // Replaced the call to _.defaults with _.merge.
-            attrs = _.merge({}, defaults, attrs);
+            // Replaced the call to _.defaults with joint.util.merge.
+            attrs = joint.util.merge({}, defaults, attrs);
             //</custom code>
         }
         this.set(attrs, options);
@@ -38,26 +38,26 @@ joint.dia.Cell = Backbone.Model.extend({
 
         // Loop through all the attributes and
         // omit the default attributes as they are implicitly reconstructable by the cell 'type'.
-        _.each(attrs, function(attr, selector) {
+        joint.util.forIn(attrs, function(attr, selector) {
 
             var defaultAttr = defaultAttrs[selector];
 
-            _.each(attr, function(value, name) {
+            joint.util.forIn(attr, function(value, name) {
 
                 // attr is mainly flat though it might have one more level (consider the `style` attribute).
                 // Check if the `value` is object and if yes, go one level deep.
-                if (_.isObject(value) && !_.isArray(value)) {
+                if (joint.util.isObject(value) && !Array.isArray(value)) {
 
-                    _.each(value, function(value2, name2) {
+                    joint.util.forIn(value, function(value2, name2) {
 
-                        if (!defaultAttr || !defaultAttr[name] || !_.isEqual(defaultAttr[name][name2], value2)) {
+                        if (!defaultAttr || !defaultAttr[name] || !joint.util.isEqual(defaultAttr[name][name2], value2)) {
 
                             finalAttrs[selector] = finalAttrs[selector] || {};
                             (finalAttrs[selector][name] || (finalAttrs[selector][name] = {}))[name2] = value2;
                         }
                     });
 
-                } else if (!defaultAttr || !_.isEqual(defaultAttr[name], value)) {
+                } else if (!defaultAttr || !joint.util.isEqual(defaultAttr[name], value)) {
                     // `value` is not an object, default attribute for such a selector does not exist
                     // or it is different than the attribute value set on the model.
 
@@ -67,7 +67,7 @@ joint.dia.Cell = Backbone.Model.extend({
             });
         });
 
-        var attributes = _.cloneDeep(_.omit(this.attributes, 'attrs'));
+        var attributes = joint.util.cloneDeep(joint.util.omit(this.attributes, 'attrs'));
         //var attributes = JSON.parse(JSON.stringify(_.omit(this.attributes, 'attrs')));
         attributes.attrs = finalAttrs;
 
@@ -102,12 +102,12 @@ joint.dia.Cell = Backbone.Model.extend({
 
         // Collect ports from the `attrs` object.
         var ports = {};
-        _.each(this.get('attrs'), function(attrs, selector) {
+        joint.util.forIn(this.get('attrs'), function(attrs, selector) {
 
             if (attrs && attrs.port) {
 
                 // `port` can either be directly an `id` or an object containing an `id` (and potentially other data).
-                if (!_.isUndefined(attrs.port.id)) {
+                if (attrs.port.id !== undefined) {
                     ports[attrs.port.id] = attrs.port;
                 } else {
                     ports[attrs.port] = { id: attrs.port };
@@ -118,22 +118,22 @@ joint.dia.Cell = Backbone.Model.extend({
         // Collect ports that have been removed (compared to the previous ports) - if any.
         // Use hash table for quick lookup.
         var removedPorts = {};
-        _.each(previousPorts, function(port, id) {
+        joint.util.forIn(previousPorts, function(port, id) {
 
             if (!ports[id]) removedPorts[id] = true;
         });
 
         // Remove all the incoming/outgoing links that have source/target port set to any of the removed ports.
-        if (this.graph && !_.isEmpty(removedPorts)) {
+        if (this.graph && !joint.util.isEmpty(removedPorts)) {
 
             var inboundLinks = this.graph.getConnectedLinks(this, { inbound: true });
-            _.each(inboundLinks, function(link) {
+            inboundLinks.forEach(function(link) {
 
                 if (removedPorts[link.get('target').port]) link.remove();
             });
 
             var outboundLinks = this.graph.getConnectedLinks(this, { outbound: true });
-            _.each(outboundLinks, function(link) {
+            outboundLinks.forEach(function(link) {
 
                 if (removedPorts[link.get('source').port]) link.remove();
             });
@@ -154,14 +154,10 @@ joint.dia.Cell = Backbone.Model.extend({
         }
 
         // First, unembed this cell from its parent cell if there is one.
-        var parentCellId = this.get('parent');
-        if (parentCellId) {
+        var parentCell = this.getParentCell();
+        if (parentCell) parentCell.unembed(this);
 
-            var parentCell = graph && graph.getCell(parentCellId);
-            parentCell.unembed(this);
-        }
-
-        _.invoke(this.getEmbeddedCells(), 'remove', opt);
+        joint.util.invoke(this.getEmbeddedCells(), 'remove', opt);
 
         this.trigger('remove', this, this.collection, opt);
 
@@ -174,22 +170,43 @@ joint.dia.Cell = Backbone.Model.extend({
 
     toFront: function(opt) {
 
-        if (this.graph) {
+        var graph = this.graph;
+        if (graph) {
 
             opt = opt || {};
 
-            var z = (this.graph.getLastCell().get('z') || 0) + 1;
+            var z = graph.maxZIndex();
 
-            this.startBatch('to-front').set('z', z, opt);
+            var cells;
 
             if (opt.deep) {
-
-                var cells = this.getEmbeddedCells({ deep: true, breadthFirst: true });
-                _.each(cells, function(cell) { cell.set('z', ++z, opt); });
-
+                cells = this.getEmbeddedCells({ deep: true, breadthFirst: true });
+                cells.unshift(this);
+            } else {
+                cells = [this];
             }
 
-            this.stopBatch('to-front');
+            z = z - cells.length + 1;
+
+            var collection = graph.get('cells');
+            var shouldUpdate = (collection.indexOf(this) !== (collection.length - cells.length));
+            if (!shouldUpdate) {
+                shouldUpdate = cells.some(function(cell, index) {
+                    return cell.get('z') !== z + index;
+                });
+            }
+
+            if (shouldUpdate) {
+                this.startBatch('to-front');
+
+                z = z + cells.length;
+
+                cells.forEach(function(cell, index) {
+                    cell.set('z', z + index, opt);
+                });
+
+                this.stopBatch('to-front');
+            }
         }
 
         return this;
@@ -197,24 +214,52 @@ joint.dia.Cell = Backbone.Model.extend({
 
     toBack: function(opt) {
 
-        if (this.graph) {
+        var graph = this.graph;
+        if (graph) {
 
             opt = opt || {};
 
-            var z = (this.graph.getFirstCell().get('z') || 0) - 1;
+            var z = graph.minZIndex();
 
-            this.startBatch('to-back');
+            var cells;
 
             if (opt.deep) {
-
-                var cells = this.getEmbeddedCells({ deep: true, breadthFirst: true });
-                _.eachRight(cells, function(cell) { cell.set('z', z--, opt); });
+                cells = this.getEmbeddedCells({ deep: true, breadthFirst: true });
+                cells.unshift(this);
+            } else {
+                cells = [this];
             }
 
-            this.set('z', z, opt).stopBatch('to-back');
+            var collection = graph.get('cells');
+            var shouldUpdate = (collection.indexOf(this) !== 0);
+            if (!shouldUpdate) {
+                shouldUpdate = cells.some(function(cell, index) {
+                    return cell.get('z') !== z + index;
+                });
+            }
+
+            if (shouldUpdate) {
+                this.startBatch('to-back');
+
+                z -= cells.length;
+
+                cells.forEach(function(cell, index) {
+                    cell.set('z', z + index, opt);
+                });
+
+                this.stopBatch('to-back');
+            }
         }
 
         return this;
+    },
+
+    parent: function(parent, opt) {
+
+        // getter
+        if (parent === undefined) return this.get('parent');
+        // setter
+        return this.set('parent', parent, opt);
     },
 
     embed: function(cell, opt) {
@@ -227,13 +272,13 @@ joint.dia.Cell = Backbone.Model.extend({
 
             this.startBatch('embed');
 
-            var embeds = _.clone(this.get('embeds') || []);
+            var embeds = joint.util.assign([], this.get('embeds'));
 
             // We keep all element ids after link ids.
             embeds[cell.isLink() ? 'unshift' : 'push'](cell.id);
 
-            cell.set('parent', this.id, opt);
-            this.set('embeds', _.uniq(embeds), opt);
+            cell.parent(this.id, opt);
+            this.set('embeds', joint.util.uniq(embeds), opt);
 
             this.stopBatch('embed');
         }
@@ -246,11 +291,20 @@ joint.dia.Cell = Backbone.Model.extend({
         this.startBatch('unembed');
 
         cell.unset('parent', opt);
-        this.set('embeds', _.without(this.get('embeds'), cell.id), opt);
+        this.set('embeds', joint.util.without(this.get('embeds'), cell.id), opt);
 
         this.stopBatch('unembed');
 
         return this;
+    },
+
+    getParentCell: function() {
+
+        // unlike link.source/target, cell.parent stores id directly as a string
+        var parentId = this.parent();
+        var graph = this.graph;
+
+        return (parentId && graph && graph.getCell(parentId)) || null;
     },
 
     // Return an array of ancestor cells.
@@ -259,20 +313,15 @@ joint.dia.Cell = Backbone.Model.extend({
     getAncestors: function() {
 
         var ancestors = [];
-        var parentId = this.get('parent');
 
         if (!this.graph) {
             return ancestors;
         }
 
-        while (parentId !== undefined) {
-            var parent = this.graph.getCell(parentId);
-            if (parent !== undefined) {
-                ancestors.push(parent);
-                parentId = parent.get('parent');
-            } else {
-                break;
-            }
+        var parentCell = this.getParentCell();
+        while (parentCell) {
+            ancestors.push(parentCell);
+            parentCell = parentCell.getParentCell();
         }
 
         return ancestors;
@@ -309,14 +358,14 @@ joint.dia.Cell = Backbone.Model.extend({
 
                     // depthFirst algorithm
                     cells = this.getEmbeddedCells();
-                    _.each(cells, function(cell) {
+                    cells.forEach(function(cell) {
                         cells.push.apply(cells, cell.getEmbeddedCells(opt));
                     });
                 }
 
             } else {
 
-                cells = _.map(this.get('embeds'), this.graph.getCell, this.graph);
+                cells = joint.util.toArray(this.get('embeds')).map(this.graph.getCell, this.graph);
             }
 
             return cells;
@@ -326,10 +375,10 @@ joint.dia.Cell = Backbone.Model.extend({
 
     isEmbeddedIn: function(cell, opt) {
 
-        var cellId = _.isString(cell) ? cell : cell.id;
-        var parentId = this.get('parent');
+        var cellId = joint.util.isString(cell) ? cell : cell.id;
+        var parentId = this.parent();
 
-        opt = _.defaults({ deep: true }, opt);
+        opt = joint.util.defaults({ deep: true }, opt);
 
         // See getEmbeddedCells().
         if (this.graph && opt.deep) {
@@ -338,7 +387,7 @@ joint.dia.Cell = Backbone.Model.extend({
                 if (parentId === cellId) {
                     return true;
                 }
-                parentId = this.graph.getCell(parentId).get('parent');
+                parentId = this.graph.getCell(parentId).parent();
             }
 
             return false;
@@ -354,7 +403,7 @@ joint.dia.Cell = Backbone.Model.extend({
     // Whether or not the cell is embedded in any other cell.
     isEmbedded: function() {
 
-        return !!this.get('parent');
+        return !!this.parent();
     },
 
     // Isolated cloning. Isolated cloning has two versions: shallow and deep (pass `{ deep: true }` in `opt`).
@@ -382,7 +431,7 @@ joint.dia.Cell = Backbone.Model.extend({
             // Deep cloning.
 
             // For a deep clone, simply call `graph.cloneCells()` with the cell and all its embedded cells.
-            return _.values(joint.dia.Graph.prototype.cloneCells.call(null, [this].concat(this.getEmbeddedCells({ deep: true }))));
+            return joint.util.toArray(joint.dia.Graph.prototype.cloneCells.call(null, [this].concat(this.getEmbeddedCells({ deep: true }))));
         }
     },
 
@@ -400,9 +449,9 @@ joint.dia.Cell = Backbone.Model.extend({
     prop: function(props, value, opt) {
 
         var delim = '/';
-        var isString = _.isString(props);
+        var isString = joint.util.isString(props);
 
-        if (isString || _.isArray(props)) {
+        if (isString || Array.isArray(props)) {
             // Get/set an attribute by a special path syntax that delimits
             // nested objects by the colon character.
 
@@ -442,7 +491,7 @@ joint.dia.Cell = Backbone.Model.extend({
 
                 for (var i = 1; i < pathArrayLength; i++) {
                     var pathItem = pathArray[i];
-                    var isArrayIndex = _.isFinite(isString ? Number(pathItem) : pathItem);
+                    var isArrayIndex = Number.isFinite(isString ? Number(pathItem) : pathItem);
                     initializer = initializer[prevProperty] = isArrayIndex ? [] : {};
                     prevProperty = pathItem;
                 }
@@ -450,13 +499,13 @@ joint.dia.Cell = Backbone.Model.extend({
                 // Fill update with the `value` on `path`.
                 update = joint.util.setByPath(update, pathArray, value, '/');
 
-                var baseAttributes = _.merge({}, this.attributes);
+                var baseAttributes = joint.util.merge({}, this.attributes);
                 // if rewrite mode enabled, we replace value referenced by path with
                 // the new one (we don't merge).
                 opt.rewrite && joint.util.unsetByPath(baseAttributes, path, '/');
 
                 // Merge update with the model attributes.
-                var attributes = _.merge(baseAttributes, update);
+                var attributes = joint.util.merge(baseAttributes, update);
                 // Finally, set the property to the updated attributes.
                 return this.set(property, attributes[property], opt);
 
@@ -466,7 +515,7 @@ joint.dia.Cell = Backbone.Model.extend({
             }
         }
 
-        return this.set(_.merge({}, this.attributes, props), value);
+        return this.set(joint.util.merge({}, this.attributes, props), value);
     },
 
     // A convient way to unset nested properties
@@ -478,7 +527,7 @@ joint.dia.Cell = Backbone.Model.extend({
         opt = opt || {};
         opt.dirty = true;
 
-        var pathArray = _.isArray(path) ? path : path.split('/');
+        var pathArray = Array.isArray(path) ? path : path.split('/');
 
         if (pathArray.length === 1) {
             // A top level property
@@ -488,7 +537,7 @@ joint.dia.Cell = Backbone.Model.extend({
         // A nested property
         var property = pathArray[0];
         var nestedPath = pathArray.slice(1);
-        var propertyValue = _.merge({}, this.get(property));
+        var propertyValue = joint.util.cloneDeep(this.get(property));
 
         joint.util.unsetByPath(propertyValue, nestedPath, '/');
 
@@ -498,14 +547,14 @@ joint.dia.Cell = Backbone.Model.extend({
     // A convenient way to set nested attributes.
     attr: function(attrs, value, opt) {
 
-        var args = Array.prototype.slice.call(arguments);
+        var args = Array.from(arguments);
         if (args.length === 0) {
             return this.get('attrs');
         }
 
-        if (_.isArray(attrs)) {
+        if (Array.isArray(attrs)) {
             args[0] = ['attrs'].concat(attrs);
-        } else if (_.isString(attrs)) {
+        } else if (joint.util.isString(attrs)) {
             // Get/set an attribute by a special path syntax that delimits
             // nested objects by the colon character.
             args[0] = 'attrs/' + attrs;
@@ -521,7 +570,7 @@ joint.dia.Cell = Backbone.Model.extend({
     // A convenient way to unset nested attributes
     removeAttr: function(path, opt) {
 
-        if (_.isArray(path)) {
+        if (Array.isArray(path)) {
 
             return this.removeProp(['attrs'].concat(path));
         }
@@ -540,12 +589,12 @@ joint.dia.Cell = Backbone.Model.extend({
             valueFunction: joint.util.interpolate.number
         };
 
-        opt = _.extend(defaults, opt);
+        opt = joint.util.assign(defaults, opt);
 
         var firstFrameTime = 0;
         var interpolatingFunction;
 
-        var setter = _.bind(function(runtime) {
+        var setter = function(runtime) {
 
             var id, progress, propertyValue;
 
@@ -568,9 +617,9 @@ joint.dia.Cell = Backbone.Model.extend({
 
             if (!id) this.trigger('transition:end', this, path);
 
-        }, this);
+        }.bind(this);
 
-        var initiator = _.bind(function(callback) {
+        var initiator = function(callback) {
 
             this.stopTransitions(path);
 
@@ -580,13 +629,14 @@ joint.dia.Cell = Backbone.Model.extend({
 
             this.trigger('transition:start', this, path);
 
-        }, this);
+        }.bind(this);
 
-        return _.delay(initiator, opt.delay, setter);
+        return setTimeout(initiator, opt.delay, setter);
     },
 
     getTransitions: function() {
-        return _.keys(this._transitionIds);
+
+        return Object.keys(this._transitionIds);
     },
 
     stopTransitions: function(path, delim) {
@@ -595,11 +645,11 @@ joint.dia.Cell = Backbone.Model.extend({
 
         var pathArray = path && path.split(delim);
 
-        _(this._transitionIds).keys().filter(pathArray && function(key) {
+        Object.keys(this._transitionIds).filter(pathArray && function(key) {
 
-            return _.isEqual(pathArray, key.split(delim).slice(0, pathArray.length));
+            return joint.util.isEqual(pathArray, key.split(delim).slice(0, pathArray.length));
 
-        }).each(function(key) {
+        }).forEach(function(key) {
 
             joint.util.cancelFrame(this._transitionIds[key]);
 
@@ -639,12 +689,14 @@ joint.dia.Cell = Backbone.Model.extend({
     },
 
     startBatch: function(name, opt) {
-        if (this.graph) { this.graph.startBatch(name, _.extend({}, opt, { cell: this })); }
+
+        if (this.graph) { this.graph.startBatch(name, joint.util.assign({}, opt, { cell: this })); }
         return this;
     },
 
     stopBatch: function(name, opt) {
-        if (this.graph) { this.graph.stopBatch(name, _.extend({}, opt, { cell: this })); }
+
+        if (this.graph) { this.graph.stopBatch(name, joint.util.assign({}, opt, { cell: this })); }
         return this;
     }
 
@@ -659,8 +711,8 @@ joint.dia.Cell = Backbone.Model.extend({
 
     define: function(type, defaults, protoProps, staticProps) {
 
-        protoProps = _.assign({
-            defaults: _.defaultsDeep({ type: type }, defaults, this.prototype.defaults)
+        protoProps = joint.util.assign({
+            defaults: joint.util.defaultsDeep({ type: type }, defaults, this.prototype.defaults)
         }, protoProps);
 
         var Cell = this.extend(protoProps, staticProps);
@@ -680,6 +732,8 @@ joint.dia.CellView = joint.mvc.View.extend({
 
     svgElement: true,
 
+    selector: 'root',
+
     className: function() {
 
         var classNames = ['cell'];
@@ -687,7 +741,7 @@ joint.dia.CellView = joint.mvc.View.extend({
 
         if (type) {
 
-            _.each(type.toLowerCase().split('.'), function(value, index, list) {
+            type.toLowerCase().split('.').forEach(function(value, index, list) {
                 classNames.push('type-' + list.slice(0, index + 1).join('-'));
             });
         }
@@ -713,7 +767,7 @@ joint.dia.CellView = joint.mvc.View.extend({
 
     init: function() {
 
-        _.bindAll(this, 'remove', 'update');
+        joint.util.bindAll(this, 'remove', 'update');
 
         // Store reference to this to the <g> DOM element so that the view is accessible through the DOM tree.
         this.$el.data('view', this);
@@ -740,20 +794,26 @@ joint.dia.CellView = joint.mvc.View.extend({
     // Example: `can('vertexMove')`, `can('labelMove')`.
     can: function(feature) {
 
-        var interactive = _.isFunction(this.options.interactive)
+        var interactive = joint.util.isFunction(this.options.interactive)
                             ? this.options.interactive(this)
                             : this.options.interactive;
 
-        return (_.isObject(interactive) && interactive[feature] !== false) ||
-                (_.isBoolean(interactive) && interactive !== false);
+        return (joint.util.isObject(interactive) && interactive[feature] !== false) ||
+                (joint.util.isBoolean(interactive) && interactive !== false);
     },
 
-    findBySelector: function(selector, root) {
+    findBySelector: function(selector, root, selectors) {
 
-        var $root = $(root || this.el);
+        root || (root = this.el);
+        selectors || (selectors = this.selectors);
+
         // These are either descendants of `this.$el` of `this.$el` itself.
         // `.` is a special selector used to select the wrapping `<g>` element.
-        return (selector === '.') ? $root : $root.find(selector);
+        if (!selector || selector === '.') return [root];
+        if (selectors && selectors[selector]) return [selectors[selector]];
+        // Maintaining backwards compatibility
+        // e.g. `circle:first` would fail with querySelector() call
+        return $(root).find(selector).toArray();
     },
 
     notify: function(eventName) {
@@ -770,6 +830,7 @@ joint.dia.CellView = joint.mvc.View.extend({
         }
     },
 
+    // ** Deprecated **
     getStrokeBBox: function(el) {
         // Return a bounding box rectangle that takes into account stroke.
         // Note that this is a naive and ad-hoc implementation that does not
@@ -780,8 +841,7 @@ joint.dia.CellView = joint.mvc.View.extend({
         var isMagnet = !!el;
 
         el = el || this.el;
-        var bbox = V(el).bbox(false, this.paper.viewport);
-
+        var bbox = V(el).getBBox({ target: this.paper.viewport });
         var strokeWidth;
         if (isMagnet) {
 
@@ -799,7 +859,7 @@ joint.dia.CellView = joint.mvc.View.extend({
 
     getBBox: function() {
 
-        return g.rect(this.vel.bbox());
+        return this.vel.getBBox({ target: this.paper.svg });
     },
 
     highlight: function(el, opt) {
@@ -880,6 +940,68 @@ joint.dia.CellView = joint.mvc.View.extend({
         return selector;
     },
 
+    getLinkEnd: function(magnet, x, y, link, endType) {
+
+        var model = this.model;
+        var id = model.id;
+        var port = this.findAttribute('port', magnet);
+        // Find a unique `selector` of the element under pointer that is a magnet.
+        var selector = magnet.getAttribute('joint-selector');
+
+        var end = { id: id };
+        if (selector != null) end.magnet = selector;
+        if (port != null) {
+            end.port = port;
+            if (!model.hasPort(port) && !selector) {
+                // port created via the `port` attribute (not API)
+                end.selector = this.getSelector(magnet);
+            }
+        } else if (selector == null && this.el !== magnet) {
+            end.selector = this.getSelector(magnet);
+        }
+
+        var paper = this.paper;
+        var connectionStrategy = paper.options.connectionStrategy;
+        if (typeof connectionStrategy === 'function') {
+            var strategy = connectionStrategy.call(paper, end, this, magnet, new g.Point(x, y), link, endType);
+            if (strategy) end = strategy;
+        }
+
+        return end;
+    },
+
+    getMagnetFromLinkEnd: function(end) {
+
+        var root = this.el;
+        var port = end.port;
+        var selector = end.magnet;
+        var magnet;
+        if (port != null && this.model.hasPort(port)) {
+            magnet = this.findPortNode(port, selector) || root;
+        } else {
+            magnet = this.findBySelector(selector || end.selector, root, this.selectors)[0];
+        }
+
+        return magnet;
+    },
+
+    findAttribute: function(attributeName, node) {
+
+        if (!node) return null;
+
+        var attributeValue = node.getAttribute(attributeName);
+        if (attributeValue === null) {
+            if (node === this.el) return null;
+            var currentNode = node.parentNode;
+            while (currentNode && currentNode !== this.el && currentNode.nodeType === 1) {
+                attributeValue = currentNode.getAttribute(attributeName)
+                if (attributeValue !== null) break;
+                currentNode = currentNode.parentNode;
+            }
+        }
+        return attributeValue;
+    },
+
     getAttributeDefinition: function(attrName) {
 
         return this.model.constructor.getAttributeDefinition(attrName);
@@ -887,7 +1009,7 @@ joint.dia.CellView = joint.mvc.View.extend({
 
     setNodeAttributes: function(node, attrs) {
 
-        if (!_.isEmpty(attrs)) {
+        if (!joint.util.isEmpty(attrs)) {
             if (node instanceof SVGElement) {
                 V(node).attr(attrs);
             } else {
@@ -906,8 +1028,8 @@ joint.dia.CellView = joint.mvc.View.extend({
             if (!attrs.hasOwnProperty(attrName)) continue;
             attrVal = attrs[attrName];
             def = this.getAttributeDefinition(attrName);
-            if (def && (!_.isFunction(def.qualify) || def.qualify.call(this, attrVal, node, attrs))) {
-                if (_.isString(def.set)) {
+            if (def && (!joint.util.isFunction(def.qualify) || def.qualify.call(this, attrVal, node, attrs))) {
+                if (joint.util.isString(def.set)) {
                     normalAttrs || (normalAttrs = {});
                     normalAttrs[def.set] = attrVal;
                 }
@@ -926,15 +1048,15 @@ joint.dia.CellView = joint.mvc.View.extend({
             attrName = relatives[i];
             def = relatives[i+1];
             attrVal = attrs[attrName];
-            if (_.isFunction(def.set)) {
+            if (joint.util.isFunction(def.set)) {
                 setAttrs || (setAttrs = {});
                 setAttrs[attrName] = attrVal;
             }
-            if (_.isFunction(def.position)) {
+            if (joint.util.isFunction(def.position)) {
                 positionAttrs || (positionAttrs = {});
                 positionAttrs[attrName] = attrVal;
             }
-            if (_.isFunction(def.offset)) {
+            if (joint.util.isFunction(def.offset)) {
                 offsetAttrs || (offsetAttrs = {});
                 offsetAttrs[attrName] = attrVal;
             }
@@ -967,8 +1089,8 @@ joint.dia.CellView = joint.mvc.View.extend({
             // which will affect the node dimensions based on the reference bounding
             // box. e.g. `width`, `height`, `d`, `rx`, `ry`, `points
             var setResult = def.set.call(this, attrVal, refBBox.clone(), node, rawAttrs);
-            if (_.isObject(setResult)) {
-                _.extend(nodeAttrs, setResult);
+            if (joint.util.isObject(setResult)) {
+                joint.util.assign(nodeAttrs, setResult);
             } else if (setResult !== undefined) {
                 nodeAttrs[attrName] = setResult;
             }
@@ -987,7 +1109,7 @@ joint.dia.CellView = joint.mvc.View.extend({
         var nodeMatrix = V.transformStringToMatrix(nodeTransform);
         var nodePosition = g.Point(nodeMatrix.e, nodeMatrix.f);
         if (nodeTransform) {
-            nodeAttrs = _.omit(nodeAttrs, 'transform');
+            nodeAttrs = joint.util.omit(nodeAttrs, 'transform');
             nodeMatrix.e = nodeMatrix.f = 0;
         }
 
@@ -1047,6 +1169,7 @@ joint.dia.CellView = joint.mvc.View.extend({
             nodeMatrix.e = nodePosition.x;
             nodeMatrix.f = nodePosition.y;
             node.setAttribute('transform', V.matrixToTransformString(nodeMatrix));
+            // TODO: store nodeMatrix metrics?
         }
     },
 
@@ -1066,27 +1189,34 @@ joint.dia.CellView = joint.mvc.View.extend({
         return { sx: sx, sy: sy };
     },
 
-    findNodesAttributes: function(attrs, root, selectorCache) {
+    findNodesAttributes: function(attrs, root, selectorCache, selectors) {
 
         // TODO: merge attributes in order defined by `index` property
+
+        // most browsers sort elements in attrs by order of addition
+        // which is useful but not required
+
+        // link.updateLabels() relies on that assumption for merging label attrs over default label attrs
 
         var nodesAttrs = {};
 
         for (var selector in attrs) {
             if (!attrs.hasOwnProperty(selector)) continue;
-            var $selected = selectorCache[selector] = this.findBySelector(selector, root);
-
-            for (var i = 0, n = $selected.length; i < n; i++) {
-                var node = $selected[i];
+            var selected = selectorCache[selector] = this.findBySelector(selector, root, selectors);
+            for (var i = 0, n = selected.length; i < n; i++) {
+                var node = selected[i];
                 var nodeId = V.ensureId(node);
                 var nodeAttrs = attrs[selector];
                 var prevNodeAttrs = nodesAttrs[nodeId];
                 if (prevNodeAttrs) {
                     if (!prevNodeAttrs.merged) {
                         prevNodeAttrs.merged = true;
-                        prevNodeAttrs.attributes = _.cloneDeep(prevNodeAttrs.attributes);
+                        // if prevNode attrs is `null`, replace with `{}`
+                        prevNodeAttrs.attributes = joint.util.cloneDeep(prevNodeAttrs.attributes) || {};
                     }
-                    _.merge(prevNodeAttrs.attributes, nodeAttrs);
+                    // if prevNode attrs not set (or `null` or`{}`), use node attrs
+                    // if node attrs not set (or `null` or `{}`), use prevNode attrs
+                    joint.util.merge(prevNodeAttrs.attributes, nodeAttrs);
                 } else {
                     nodesAttrs[nodeId] = {
                         attributes: nodeAttrs,
@@ -1106,6 +1236,7 @@ joint.dia.CellView = joint.mvc.View.extend({
 
         opt || (opt = {});
         opt.rootBBox || (opt.rootBBox = g.Rect());
+        opt.selectors || (opt.selectors = this.selectors); // selector collection to use
 
         // Cache table for query results and bounding box calculation.
         // Note that `selectorCache` needs to be invalidated for all
@@ -1118,11 +1249,11 @@ joint.dia.CellView = joint.mvc.View.extend({
         var item, node, nodeAttrs, nodeData, processedAttrs;
 
         var roAttrs = opt.roAttributes;
-        var nodesAttrs = this.findNodesAttributes(roAttrs || attrs, rootNode, selectorCache);
+        var nodesAttrs = this.findNodesAttributes(roAttrs || attrs, rootNode, selectorCache, opt.selectors);
         // `nodesAttrs` are different from all attributes, when
         // rendering only  attributes sent to this method.
         var nodesAllAttrs = (roAttrs)
-            ? nodesAllAttrs = this.findNodesAttributes(attrs, rootNode, selectorCache)
+            ? nodesAllAttrs = this.findNodesAttributes(attrs, rootNode, selectorCache, opt.selectors)
             : nodesAttrs;
 
         for (var nodeId in nodesAttrs) {
@@ -1144,9 +1275,9 @@ joint.dia.CellView = joint.mvc.View.extend({
 
                 var refNode;
                 if (refSelector) {
-                    refNode = (selectorCache[refSelector] || this.findBySelector(refSelector, rootNode))[0];
+                    refNode = (selectorCache[refSelector] || this.findBySelector(refSelector, rootNode, opt.selectors))[0];
                     if (!refNode) {
-                        throw new Error('dia.ElementView: "' + refSelector + '" reference does not exists.');
+                        throw new Error('dia.ElementView: "' + refSelector + '" reference does not exist.');
                     }
                 } else {
                     refNode = null;
@@ -1161,7 +1292,10 @@ joint.dia.CellView = joint.mvc.View.extend({
 
                 // If an element in the list is positioned relative to this one, then
                 // we want to insert this one before it in the list.
-                var itemIndex = _.findIndex(relativeItems, { refNode: node });
+                var itemIndex = relativeItems.findIndex(function(item) {
+                    return item.refNode === node;
+                });
+
                 if (itemIndex > -1) {
                     relativeItems.splice(itemIndex, 0, item);
                 } else {
@@ -1184,7 +1318,7 @@ joint.dia.CellView = joint.mvc.View.extend({
                 // or to the root `<g>` element if no rotatable group present if reference node present.
                 // Uses the bounding box provided.
                 refBBox = bboxCache[refNodeId] = (refNode)
-                    ? V(refNode).bbox(false, (opt.rotatableNode || rootNode))
+                    ? V(refNode).getBBox({ target: (opt.rotatableNode || rootNode) })
                     : opt.rootBBox;
             }
 
@@ -1209,9 +1343,9 @@ joint.dia.CellView = joint.mvc.View.extend({
         processedAttrs.position || (processedAttrs.position = {});
         processedAttrs.offset || (processedAttrs.offset = {});
 
-        _.extend(processedAttrs.set, roProcessedAttrs.set);
-        _.extend(processedAttrs.position, roProcessedAttrs.position);
-        _.extend(processedAttrs.offset, roProcessedAttrs.offset);
+        joint.util.assign(processedAttrs.set, roProcessedAttrs.set);
+        joint.util.assign(processedAttrs.position, roProcessedAttrs.position);
+        joint.util.assign(processedAttrs.offset, roProcessedAttrs.offset);
 
         // Handle also the special transform property.
         var transform = processedAttrs.normal && processedAttrs.normal.transform;
@@ -1219,6 +1353,77 @@ joint.dia.CellView = joint.mvc.View.extend({
             roProcessedAttrs.normal.transform = transform;
         }
         processedAttrs.normal = roProcessedAttrs.normal;
+    },
+
+    onRemove: function() {
+        this.removeTools();
+    },
+
+    _toolsView: null,
+
+    hasTools: function(name) {
+        var toolsView = this._toolsView;
+        if (!toolsView) return false;
+        if (!name) return true;
+        return (toolsView.getName() === name);
+    },
+
+    addTools: function(toolsView) {
+
+        this.removeTools();
+
+        if (toolsView instanceof joint.dia.ToolsView) {
+            this._toolsView = toolsView;
+            toolsView.configure({ relatedView: this });
+            toolsView.listenTo(this.paper, 'tools:event', this.onToolEvent.bind(this));
+            toolsView.mount();
+        }
+        return this;
+    },
+
+    updateTools: function(opt) {
+
+        var toolsView = this._toolsView;
+        if (toolsView) toolsView.update(opt);
+        return this;
+    },
+
+    removeTools: function() {
+
+        var toolsView = this._toolsView;
+        if (toolsView) {
+            toolsView.remove();
+            this._toolsView = null;
+        }
+        return this;
+    },
+
+    hideTools: function() {
+
+        var toolsView = this._toolsView;
+        if (toolsView) toolsView.hide();
+        return this;
+    },
+
+    showTools: function() {
+
+        var toolsView = this._toolsView;
+        if (toolsView) toolsView.show();
+        return this;
+    },
+
+    onToolEvent: function(event) {
+        switch (event) {
+            case 'remove':
+                this.removeTools();
+                break;
+            case 'hide':
+                this.hideTools();
+                break;
+            case 'show':
+                this.showTools();
+                break;
+        }
     },
 
     // Interaction. The controller part.
@@ -1239,6 +1444,11 @@ joint.dia.CellView = joint.mvc.View.extend({
     pointerclick: function(evt, x, y) {
 
         this.notify('cell:pointerclick', evt, x, y);
+    },
+
+    contextmenu: function(evt, x, y) {
+
+        this.notify('cell:contextmenu', evt, x, y);
     },
 
     pointerdown: function(evt, x, y) {
@@ -1293,13 +1503,25 @@ joint.dia.CellView = joint.mvc.View.extend({
         this.notify('cell:mousewheel', evt, x, y, delta);
     },
 
-    contextmenu: function(evt, x, y) {
+    onevent: function(evt, eventName, x, y) {
 
-        this.notify('cell:contextmenu', evt, x, y);
+        this.notify(eventName, evt, x, y);
+    },
+
+    onmagnet: function() {
+
+        // noop
     },
 
     setInteractivity: function(value) {
 
         this.options.interactive = value;
+    }
+}, {
+
+    dispatchToolsEvent: function(paper, event) {
+        if ((typeof event === 'string') && (paper instanceof joint.dia.Paper)) {
+            paper.trigger('tools:event', event);
+        }
     }
 });

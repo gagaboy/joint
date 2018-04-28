@@ -312,9 +312,10 @@ QUnit.module('paper', function(hooks) {
 
             var arrowhead = connectedLinkView.el.querySelector('.marker-arrowhead[end=target]');
 
-            connectedLinkView.pointerdown({ target: arrowhead, type: 'mousedown' }, 0, 0);
-            connectedLinkView.pointermove({ target: this.paper.el, type: 'mousemove' }, 0, 0);
-            connectedLinkView.pointerup({ target: this.paper.el, type: 'mouseup' }, 0, 0);
+            var data = {};
+            connectedLinkView.pointerdown({ target: arrowhead, type: 'mousedown', data: data }, 0, 0);
+            connectedLinkView.pointermove({ target: this.paper.el, type: 'mousemove', data: data }, 0, 0);
+            connectedLinkView.pointerup({ target: this.paper.el, type: 'mouseup', data: data }, 0, 0);
 
             assert.notOk(connectSpy.called);
             assert.ok(disconnectSpy.calledOnce);
@@ -325,9 +326,10 @@ QUnit.module('paper', function(hooks) {
             var arrowhead = connectedLinkView.el.querySelector('.marker-arrowhead[end=target]');
             var soloView = graphCells[2].findView(this.paper);
 
-            connectedLinkView.pointerdown({ target: arrowhead, type: 'mousedown' }, 0, 0);
-            connectedLinkView.pointermove({ target: soloView.el, type: 'mousemove' }, 450, 450);
-            connectedLinkView.pointerup({ target: soloView.el, type: 'mouseup' }, 450, 450);
+            var data = {};
+            connectedLinkView.pointerdown({ target: arrowhead, type: 'mousedown', data: data }, 0, 0);
+            connectedLinkView.pointermove({ target: soloView.el, type: 'mousemove', data: data }, 450, 450);
+            connectedLinkView.pointerup({ target: soloView.el, type: 'mouseup', data: data }, 450, 450);
 
             assert.ok(connectSpy.calledOnce, 'connect to solo');
             assert.ok(disconnectSpy.calledOnce, 'disconnect from source');
@@ -338,9 +340,10 @@ QUnit.module('paper', function(hooks) {
             var arrowhead = connectedLinkView.el.querySelector('.marker-arrowhead[end=target]');
             var targetView = graphCells[1].findView(this.paper);
 
-            connectedLinkView.pointerdown({ target: arrowhead, type: 'mousedown' }, 0, 0);
-            connectedLinkView.pointermove({ target: targetView.el, type: 'mousemove' }, 450, 450);
-            connectedLinkView.pointerup({ target: targetView.el, type: 'mouseup' }, 450, 150);
+            var data = {};
+            connectedLinkView.pointerdown({ target: arrowhead, type: 'mousedown', data: data }, 0, 0);
+            connectedLinkView.pointermove({ target: targetView.el, type: 'mousemove', data: data }, 450, 450);
+            connectedLinkView.pointerup({ target: targetView.el, type: 'mouseup', data: data }, 450, 150);
 
             assert.notOk(connectSpy.called, 'connect should not be called');
             assert.notOk(disconnectSpy.called, 'disconnect should not be called');
@@ -354,10 +357,11 @@ QUnit.module('paper', function(hooks) {
                 var targetView = graphCells[1].findView(this.paper);
                 var soloView = graphCells[2].findView(this.paper);
 
-                soloLinkView.pointerdown({ target: arrowhead, type: 'mousedown' }, 0, 0);
-                soloLinkView.pointermove({ target: soloView.el, type: 'mousemove' }, 450, 450);
-                soloLinkView.pointermove({ target: targetView.el, type: 'mousemove' }, 450, 150);
-                soloLinkView.pointerup({ target: targetView.el, type: 'mouseup' }, 450, 450);
+                var data = {};
+                soloLinkView.pointerdown({ target: arrowhead, type: 'mousedown', data: data }, 0, 0);
+                soloLinkView.pointermove({ target: soloView.el, type: 'mousemove', data: data }, 450, 450);
+                soloLinkView.pointermove({ target: targetView.el, type: 'mousemove', data: data }, 450, 150);
+                soloLinkView.pointerup({ target: targetView.el, type: 'mouseup', data: data }, 450, 450);
 
                 assert.ok(connectSpy.calledOnce, 'connect should be called once');
                 assert.notOk(disconnectSpy.called, 'disconnect should not be called');
@@ -373,9 +377,10 @@ QUnit.module('paper', function(hooks) {
 
                 var arrowhead = connectedLinkView.el.querySelector('.marker-arrowhead[end=target]');
 
-                connectedLinkView.pointerdown({ target: arrowhead, type: 'mousedown' }, 0, 0);
-                connectedLinkView.pointermove({ target: this.paper.el, type: 'mousemove' }, 50, 50);
-                connectedLinkView.pointerup({ target: this.paper.el, type: 'mouseup' }, 50, 50);
+                var data = {};
+                connectedLinkView.pointerdown({ target: arrowhead, type: 'mousedown', data: data }, 0, 0);
+                connectedLinkView.pointermove({ target: this.paper.el, type: 'mousemove', data: data }, 50, 50);
+                connectedLinkView.pointerup({ target: this.paper.el, type: 'mouseup', data: data }, 50, 50);
 
                 assert.ok(disconnectSpy.called);
                 assert.notOk(connectSpy.called);
@@ -387,28 +392,95 @@ QUnit.module('paper', function(hooks) {
 
                 var arrowhead = connectedLinkView.el.querySelector('.marker-arrowhead[end=target]');
 
-                connectedLinkView.pointerdown({ target: arrowhead, type: 'mousedown' }, 0, 0);
-                connectedLinkView.pointermove({ target: this.paper.el, type: 'mousemove' }, 50, 50);
-                connectedLinkView.pointerup({ target: this.paper.el, type: 'mouseup' }, 50, 50);
+                var data = {};
+                connectedLinkView.pointerdown({ target: arrowhead, type: 'mousedown', data: data }, 0, 0);
+                connectedLinkView.pointermove({ target: this.paper.el, type: 'mousemove', data: data }, 50, 50);
+                connectedLinkView.pointerup({ target: this.paper.el, type: 'mouseup', data: data }, 50, 50);
 
                 assert.ok(disconnectSpy.called);
                 assert.notOk(connectSpy.called);
             });
+
+            QUnit.test('disconnect when link pinning disabled', function(assert) {
+
+                this.paper.options.linkPinning = false;
+
+                var arrowhead = connectedLinkView.el.querySelector('.marker-arrowhead[end=target]');
+
+                var data = {};
+                connectedLinkView.pointerdown({ target: arrowhead, type: 'mousedown', data: data }, 0, 0);
+                connectedLinkView.pointermove({ target: this.paper.el, type: 'mousemove', data: data }, 50, 50);
+                connectedLinkView.pointerup({ target: this.paper.el, type: 'mouseup', data: data }, 50, 50);
+
+                assert.notOk(disconnectSpy.called, 'message');
+                assert.notOk(connectSpy.called, 'message');
+            });
         });
 
-        QUnit.test('disconnect when link pinning disabled', function(assert) {
 
-            this.paper.options.linkPinning = false;
+        QUnit.module('allowLink', function(hooks) {
 
-            var arrowhead = connectedLinkView.el.querySelector('.marker-arrowhead[end=target]');
+            QUnit.test('sanity', function(assert) {
 
-            connectedLinkView.pointerdown({ target: arrowhead, type: 'mousedown' }, 0, 0);
-            connectedLinkView.pointermove({ target: this.paper.el, type: 'mousemove' }, 50, 50);
-            connectedLinkView.pointerup({ target: this.paper.el, type: 'mouseup' }, 50, 50);
+                var allowLinkSpy = sinon.spy();
 
-            assert.notOk(disconnectSpy.called, 'message');
-            assert.notOk(connectSpy.called, 'message');
+                this.paper.options.allowLink = allowLinkSpy;
+
+                var arrowhead = connectedLinkView.el.querySelector('.marker-arrowhead[end=target]');
+
+                var data = {};
+                connectedLinkView.pointerdown({ target: arrowhead, type: 'mousedown', data: data }, 0, 0);
+                connectedLinkView.pointermove({ target: this.paper.el, type: 'mousemove', data: data }, 50, 50);
+                connectedLinkView.pointerup({ target: this.paper.el, type: 'mouseup', data: data }, 50, 50);
+
+                assert.ok(allowLinkSpy.calledOnce);
+                assert.ok(allowLinkSpy.calledWith(connectedLinkView, connectedLinkView.paper));
+                assert.equal(allowLinkSpy.thisValues[0], connectedLinkView.paper);
+            });
+
+            QUnit.test('enabled - disconnect when return false', function (assert) {
+
+                this.paper.options.allowLink = function() { return false };
+
+                var arrowhead = connectedLinkView.el.querySelector('.marker-arrowhead[end=target]');
+
+                var data = {};
+                connectedLinkView.pointerdown({ target: arrowhead, type: 'mousedown', data: data }, 0, 0);
+                connectedLinkView.pointermove({ target: this.paper.el, type: 'mousemove', data: data }, 50, 50);
+                connectedLinkView.pointerup({ target: this.paper.el, type: 'mouseup', data: data }, 50, 50);
+
+                assert.notOk(disconnectSpy.called);
+            });
+
+            QUnit.test('enabled - disconnect when return true', function (assert) {
+
+                this.paper.options.allowLink = function() { return true };
+
+                var arrowhead = connectedLinkView.el.querySelector('.marker-arrowhead[end=target]');
+
+                var data = {};
+                connectedLinkView.pointerdown({ target: arrowhead, type: 'mousedown', data: data }, 0, 0);
+                connectedLinkView.pointermove({ target: this.paper.el, type: 'mousemove', data: data }, 50, 50);
+                connectedLinkView.pointerup({ target: this.paper.el, type: 'mouseup', data: data }, 50, 50);
+
+                assert.ok(disconnectSpy.called);
+            });
+
+            QUnit.test('disconnect when disabled', function (assert) {
+
+                this.paper.options.allowLink = null;
+
+                var arrowhead = connectedLinkView.el.querySelector('.marker-arrowhead[end=target]');
+
+                var data = {};
+                connectedLinkView.pointerdown({ target: arrowhead, type: 'mousedown', data: data }, 0, 0);
+                connectedLinkView.pointermove({ target: this.paper.el, type: 'mousemove', data: data }, 50, 50);
+                connectedLinkView.pointerup({ target: this.paper.el, type: 'mouseup', data: data }, 50, 50);
+
+                assert.ok(disconnectSpy.called, 'message');
+            });
         });
+
     });
 
     QUnit.module('connect/disconnect to ports event ', function(hooks) {
@@ -439,9 +511,10 @@ QUnit.module('paper', function(hooks) {
             var arrowhead = linkView.el.querySelector('.marker-arrowhead[end=source]');
             var port = this.paper.findViewByModel(this.modelWithPorts).el.querySelector('.port-body[port="in1"]');
 
-            linkView.pointerdown({ target: arrowhead, type: 'mousedown' }, 0, 0);
-            linkView.pointermove({ target: port, type: 'mousemove' }, 0, 0);
-            linkView.pointerup({ target: port, type: 'mouseup' }, 0, 0);
+            var data = {};
+            linkView.pointerdown({ target: arrowhead, type: 'mousedown', data: data }, 0, 0);
+            linkView.pointermove({ target: port, type: 'mousemove', data: data }, 0, 0);
+            linkView.pointerup({ target: port, type: 'mouseup', data: data }, 0, 0);
 
             assert.ok(connectSpy.calledOnce);
             assert.notOk(disconnectSpy.called);
@@ -456,19 +529,42 @@ QUnit.module('paper', function(hooks) {
             var arrowhead = linkView.el.querySelector('.marker-arrowhead[end=source]');
             var portElement = this.paper.findViewByModel(this.modelWithPorts).el.querySelector('.port-body[port="in2"]');
 
-            linkView.pointerdown({ target: arrowhead, type: 'mousedown' }, 0, 0);
-            linkView.pointermove({ target: portElement, type: 'mousemove' }, 0, 0);
-            linkView.pointerup({ target: portElement, type: 'mouseup' }, 0, 0);
+            var data = {};
+            linkView.pointerdown({ target: arrowhead, type: 'mousedown', data: data }, 0, 0);
+            linkView.pointermove({ target: portElement, type: 'mousemove', data: data }, 0, 0);
+            linkView.pointerup({ target: portElement, type: 'mouseup', data: data }, 0, 0);
 
             assert.ok(connectSpy.calledOnce);
             assert.ok(disconnectSpy.calledOnce);
         });
     });
 
+    QUnit.test('paper.options: moveThreshold', function(assert) {
+
+        var graph = this.graph;
+        var paper = this.paper;
+        var el = (new joint.shapes.basic.Rect()).size(100, 100).position(0, 0).addTo(graph);
+        var elView = el.findView(paper);
+        var elRect = elView.el.querySelector('rect');
+        var spy = sinon.spy();
+
+        paper.options.moveThreshold = 2;
+        paper.on('element:pointermove', spy);
+        var data = {};
+        paper.pointerdown($.Event('mousedown', { target: elRect, data: data }));
+        paper.pointermove($.Event('mousemove', { target: elRect, data: data })); // Ignored
+        paper.pointermove($.Event('mousemove', { target: elRect, data: data })); // Ignored
+        paper.pointermove($.Event('mousemove', { target: elRect, data: data })); // Processed
+        paper.pointerup($.Event('mouseup', { target: elRect, data: data }));
+
+        assert.ok(spy.calledOnce);
+    });
+
     QUnit.test('paper.options: linkPinning', function(assert) {
 
         assert.expect(5);
 
+        var data;
         var source = new joint.shapes.basic.Rect({
             id: 'source',
             position: { x: 100, y: 100 },
@@ -491,16 +587,18 @@ QUnit.module('paper', function(hooks) {
         var arrowhead = linkView.el.querySelector('.marker-arrowhead[end=target]');
 
         this.paper.options.linkPinning = false;
-        linkView.pointerdown({ target: arrowhead, type: 'mousedown' }, 0, 0);
-        linkView.pointermove({ target: this.paper.el, type: 'mousemove' }, 50, 50);
-        linkView.pointerup({ target: this.paper.el, type: 'mouseup' }, 50, 50);
+        data = {};
+        linkView.pointerdown({ target: arrowhead, type: 'mousedown', data: data }, 0, 0);
+        linkView.pointermove({ target: this.paper.el, type: 'mousemove', data: data }, 50, 50);
+        linkView.pointerup({ target: this.paper.el, type: 'mouseup', data: data }, 50, 50);
 
         assert.deepEqual(link.get('target'), { id: target.id }, 'pinning disabled: when the arrowhead is dragged&dropped to the blank paper area, the arrowhead is return to its original position.');
 
         this.paper.options.linkPinning = true;
-        linkView.pointerdown({ target: arrowhead, type: 'mousedown' }, 0, 0);
-        linkView.pointermove({ target: this.paper.el, type: 'mousemove' }, 50, 50);
-        linkView.pointerup({ target: this.paper.el, type: 'mouseup' }, 50, 50);
+        data = {};
+        linkView.pointerdown({ target: arrowhead, type: 'mousedown', data: data }, 0, 0);
+        linkView.pointermove({ target: this.paper.el, type: 'mousemove', data: data }, 50, 50);
+        linkView.pointerup({ target: this.paper.el, type: 'mouseup', data: data }, 50, 50);
 
         assert.deepEqual(link.get('target'), {
             x: 50,
@@ -508,17 +606,18 @@ QUnit.module('paper', function(hooks) {
         }, 'pinning enabled: when the arrowhead is dragged&dropped to the blank paper area, the arrowhead is set to a point.');
 
         this.paper.options.linkPinning = false;
-        linkView.pointerdown({ target: arrowhead, type: 'mousedown' }, 0, 0);
-        linkView.pointermove({ target: targetView.el, type: 'mousemove' }, 450, 150);
-        linkView.pointerup({ target: targetView.el, type: 'mouseup' }, 450, 150);
+        data = {};
+        linkView.pointerdown({ target: arrowhead, type: 'mousedown', data: data }, 0, 0);
+        linkView.pointermove({ target: targetView.el, type: 'mousemove', data: data }, 450, 150);
+        linkView.pointerup({ target: targetView.el, type: 'mouseup', data: data }, 450, 150);
 
         assert.deepEqual(link.get('target'), { id: 'target' }, 'pinning disabled: it\'s still possible to connect link to elements.');
 
         this.paper.options.linkPinning = true;
         source.attr('.', { magnet: true });
-        sourceView.pointerdown({ target: sourceView.el, type: 'mousedown' }, 150, 150);
-        sourceView.pointermove({ target: this.paper.el, type: 'mousemove' }, 150, 400);
-        sourceView.pointerup({ target: this.paper.el, type: 'mouseup' }, 150, 400);
+        data = {};
+        sourceView.dragMagnetStart({ target: sourceView.el, type: 'mousedown', data: data }, 150, 150);
+        sourceView.pointermove({ type: 'mousemove', data: data }, 150, 400);
 
         newLink = _.reject(this.graph.getLinks(), { id: 'link' })[0];
         if (newLink) {
@@ -530,9 +629,10 @@ QUnit.module('paper', function(hooks) {
         }
 
         this.paper.options.linkPinning = false;
-        sourceView.pointerdown({ target: sourceView.el, type: 'mousedown' }, 150, 150);
-        sourceView.pointermove({ target: this.paper.el, type: 'mousemove' }, 150, 400);
-        sourceView.pointerup({ target: this.paper.el, type: 'mouseup' }, 150, 400);
+        data = {};
+        sourceView.pointerdown({ target: sourceView.el, type: 'mousedown', data: data }, 150, 150);
+        sourceView.pointermove({ target: this.paper.el, type: 'mousemove', data: data }, 150, 400);
+        sourceView.pointerup({ target: this.paper.el, type: 'mouseup', data: data }, 150, 400);
 
         newLink = _.reject(this.graph.getLinks(), { id: 'link' })[0];
         assert.notOk(newLink, 'pinning disabled: when there was a link created from a magnet a dropped into the blank paper area, the link was removed after the drop.');
@@ -610,9 +710,88 @@ QUnit.module('paper', function(hooks) {
         assert.ok(diffX < 5 && diffY < 5, 'element should not have been moved');
     });
 
+    QUnit.test('getContentArea()', function(assert) {
+
+        assert.checkBboxApproximately(2/* +- */, this.paper.getContentArea(), {
+            x: 0,
+            y: 0,
+            width: 0,
+            height: 0
+        }, 'empty graph, content area should be correct');
+
+        var rect1 = new joint.shapes.basic.Rect({
+            position: {
+                x: 20,
+                y: 20
+            },
+            size: {
+                width: 40,
+                height: 40
+            }
+        });
+
+        this.graph.addCell(rect1);
+
+        assert.checkBboxApproximately(2/* +- */, this.paper.getContentArea(), {
+            x: 20,
+            y: 20,
+            width: 40,
+            height: 40
+        }, 'one rectangle, content area should be correct');
+
+        var rect2 = new joint.shapes.basic.Rect({
+            position: {
+                x: 5,
+                y: 8
+            },
+            size: {
+                width: 25,
+                height: 25
+            }
+        });
+
+        this.graph.addCell(rect2);
+
+        assert.checkBboxApproximately(2/* +- */, this.paper.getContentArea(), {
+            x: 5,
+            y: 8,
+            width: 55,
+            height: 52
+        }, 'two rectangles, content area should be correct');
+
+        var circle1 = new joint.shapes.basic.Circle({
+            position: {
+                x: 75,
+                y: 5
+            },
+            size: {
+                width: 25,
+                height: 25
+            }
+        });
+
+        this.graph.addCell(circle1);
+
+        assert.checkBboxApproximately(2/* +- */, this.paper.getContentArea(), {
+            x: 5,
+            y: 5,
+            width: 95,
+            height: 55
+        }, 'two rectangles + one circle, content area should be correct');
+
+        V(this.paper.viewport).scale(2, 2);
+
+        assert.checkBboxApproximately(4/* +- */, this.paper.getContentArea(), {
+            x: 5,
+            y: 5,
+            width: 95,
+            height: 55
+        }, 'two rectangles + one circle (scaled by factor of 2), content area should be correct');
+    });
+
     QUnit.test('getContentBBox()', function(assert) {
 
-        checkBboxApproximately(2/* +- */, this.paper.getContentBBox(), {
+        assert.checkBboxApproximately(2/* +- */, this.paper.getContentBBox(), {
             x: 0,
             y: 0,
             width: 0,
@@ -632,7 +811,7 @@ QUnit.module('paper', function(hooks) {
 
         this.graph.addCell(rect1);
 
-        checkBboxApproximately(2/* +- */, this.paper.getContentBBox(), {
+        assert.checkBboxApproximately(2/* +- */, this.paper.getContentBBox(), {
             x: 20,
             y: 20,
             width: 40,
@@ -652,7 +831,7 @@ QUnit.module('paper', function(hooks) {
 
         this.graph.addCell(rect2);
 
-        checkBboxApproximately(2/* +- */, this.paper.getContentBBox(), {
+        assert.checkBboxApproximately(2/* +- */, this.paper.getContentBBox(), {
             x: 5,
             y: 8,
             width: 55,
@@ -672,7 +851,7 @@ QUnit.module('paper', function(hooks) {
 
         this.graph.addCell(circle1);
 
-        checkBboxApproximately(2/* +- */, this.paper.getContentBBox(), {
+        assert.checkBboxApproximately(2/* +- */, this.paper.getContentBBox(), {
             x: 5,
             y: 5,
             width: 95,
@@ -681,7 +860,7 @@ QUnit.module('paper', function(hooks) {
 
         V(this.paper.viewport).scale(2, 2);
 
-        checkBboxApproximately(4/* +- */, this.paper.getContentBBox(), {
+        assert.checkBboxApproximately(4/* +- */, this.paper.getContentBBox(), {
             x: 10,
             y: 10,
             width: 190,
@@ -737,7 +916,7 @@ QUnit.module('paper', function(hooks) {
 
             paper.linkAllowed();
 
-        }, new Error('Must provide link model or view.'), 'should throw error when link model/view is missing');
+        }, new Error('Must provide a linkView.'), 'should throw error when linkview is missing');
 
         var rect1 = new joint.shapes.basic.Rect({
             position: { x: 20, y: 30 },
@@ -764,7 +943,6 @@ QUnit.module('paper', function(hooks) {
 
         var linkView = this.paper.findViewByModel(link);
 
-        assert.ok(this.paper.linkAllowed(link), 'can use link model');
         assert.ok(this.paper.linkAllowed(linkView), 'can use link view');
 
         var pinnedLink = new joint.dia.Link({
@@ -772,11 +950,15 @@ QUnit.module('paper', function(hooks) {
             target: { x: 200, y: 200 }
         });
 
+        this.graph.addCell(pinnedLink);
+
+        var pinnedLinkView = this.paper.findViewByModel(pinnedLink);
+
         this.paper.options.linkPinning = false;
-        assert.notOk(this.paper.linkAllowed(pinnedLink), 'pinned link not allowed when link pinning is disabled');
+        assert.notOk(this.paper.linkAllowed(pinnedLinkView), 'pinned link not allowed when link pinning is disabled');
 
         this.paper.options.linkPinning = true;
-        assert.ok(this.paper.linkAllowed(pinnedLink), 'pinned link allowed when link pinning is enabled');
+        assert.ok(this.paper.linkAllowed(pinnedLinkView), 'pinned link allowed when link pinning is enabled');
 
         var multiLink1 = new joint.dia.Link({
             source: { id: rect1.id },
@@ -790,11 +972,13 @@ QUnit.module('paper', function(hooks) {
 
         this.graph.addCells([multiLink1, multiLink2]);
 
+        var multiLink2View = this.paper.findViewByModel(multiLink2);
+
         this.paper.options.multiLinks = false;
-        assert.notOk(this.paper.linkAllowed(multiLink2), 'multi link not allowed when link multi-links is disabled');
+        assert.notOk(this.paper.linkAllowed(multiLink2View), 'multi link not allowed when link multi-links is disabled');
 
         this.paper.options.multiLinks = true;
-        assert.ok(this.paper.linkAllowed(multiLink2), 'multi link allowed when link multi-links is enabled');
+        assert.ok(this.paper.linkAllowed(multiLink2View), 'multi link allowed when link multi-links is enabled');
     });
 
     QUnit.test('setGridSize(gridSize)', function(assert) {
@@ -811,7 +995,7 @@ QUnit.module('paper', function(hooks) {
 
         var getGridVel = function(paper) {
             var image = paper.$grid.css('backgroundImage').replace(/url\("*|"*\)/g, '').replace('data:image/svg+xml;base64,', '');
-            return V(atob(image));
+            return image !== 'none' ?  V(atob(image)) : undefined;
         };
 
         var preparePaper = function(drawGrid, paperSettings) {
@@ -833,7 +1017,6 @@ QUnit.module('paper', function(hooks) {
 
             return paper;
         };
-
 
         QUnit.test('no grid', function(assert) {
 
@@ -1165,7 +1348,7 @@ QUnit.module('paper', function(hooks) {
             var cells = this.graph.getCells();
             assert.ok(cells.length > 0, 'make sure cells are iterated');
 
-            _.each(cells, function(cell) {
+            cells.forEach(function(cell) {
 
                 var cellView = this.paper.findViewByModel(cell);
                 assert.ok(cellView.options.interactive);
@@ -1181,7 +1364,7 @@ QUnit.module('paper', function(hooks) {
             var cells = this.graph.getCells();
             assert.ok(cells.length > 0, 'make sure cells are iterated');
 
-            _.each(cells, function(cell) {
+            cells.forEach(function(cell) {
 
                 var cellView = this.paper.findViewByModel(cell);
                 assert.equal(cellView.can('manipulate'), cellView.model.isLink(), 'only links can be manipulated');

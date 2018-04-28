@@ -24,19 +24,25 @@ module.exports = function(grunt) {
             'src/joint.mvc.view.js',
             'src/joint.dia.graph.js',
             'src/joint.dia.attributes.js',
+            'src/joint.dia.tools.js',
             'src/joint.dia.cell.js',
             'src/joint.dia.element.js',
             'src/joint.dia.link.js',
             'src/joint.dia.paper.js',
             'src/ports.js',
             'plugins/shapes/joint.shapes.basic.js',
+            'plugins/shapes/joint.shapes.standard.js',
             'plugins/routers/*.js',
             'plugins/connectors/joint.connectors.normal.js',
             'plugins/connectors/joint.connectors.rounded.js',
             'plugins/connectors/joint.connectors.smooth.js',
             'plugins/connectors/joint.connectors.jumpover.js',
             'plugins/layout/ports/*.js',
-            'plugins/highlighters/*.js'
+            'plugins/highlighters/*.js',
+            'plugins/anchors/*.js',
+            'plugins/connectionPoints/*.js',
+            'plugins/connectionStrategies/*.js',
+            'plugins/tools/*.js'
         ],
 
         geometry: ['src/geometry.js'],
@@ -45,7 +51,10 @@ module.exports = function(grunt) {
         polyfills: [
             'plugins/polyfills/base64.js',
             'plugins/polyfills/typedArray.js',
-            'plugins/polyfills/xhrResponse.js'
+            'plugins/polyfills/xhrResponse.js',
+            'plugins/polyfills/array.js',
+            'plugins/polyfills/string.js',
+            'plugins/polyfills/number.js'
         ],
 
         plugins: {
@@ -121,23 +130,24 @@ module.exports = function(grunt) {
         interval: 1500
     } : {};
 
+
+    var lodash4TestDir = __dirname + '/test/jointjs/lodash4';
+
     var config = {
 
         pkg: pkg,
 
         webpack: {
             joint: {
-                files: {
-                   './build/joint.webpack-bundle.js' : './build/joint.min.js'
-                },
                 entry: './build/joint.min.js',
                 output: {
-                    path: './build/',
+                    path: __dirname + '/build',
                     filename: 'joint.webpack-bundle.js',
                     library: 'joint'
                 },
                 resolve: {
                     alias: {
+                        underscore: 'lodash',
                         g: './geometry.min.js',
                         V: './vectorizer.min.js'
                     }
@@ -431,7 +441,8 @@ module.exports = function(grunt) {
                 'src/**/*.js',
 
                 // Tests:
-                'test/**/*.js'
+                'test/**/*.js',
+                '!test/**/lodash4/**'
             ],
             options: {
                 configFile: '.eslintrc.js'
@@ -460,14 +471,17 @@ module.exports = function(grunt) {
         qunit: {
             all: [
                 'test/**/*.html',
-                '!test/**/coverage.html'
+                '!test/**/coverage.html',
+                '!test/**/node_modules/**'
             ],
             all_coverage: [
-                'test/**/coverage.html'
+                'test/**/coverage.html',
+                '!test/**/node_modules/**'
             ],
             joint: [
                 'test/jointjs/*.html',
-                '!test/jointjs/coverage.html'
+                '!test/jointjs/coverage.html',
+                '!test/**/node_modules/**'
             ],
             geometry: ['test/geometry/*.html'],
             vectorizer: ['test/vectorizer/*.html']
@@ -484,6 +498,11 @@ module.exports = function(grunt) {
                     var cmd = 'cd ' + dir + ' && bower --allow-root install' + flags;
 
                     return cmd;
+                }
+            },
+            lodash4testsInstall: {
+                command: function() {
+                    return 'cd ' + lodash4TestDir + ' && npm install';
                 }
             }
         },
@@ -614,7 +633,7 @@ module.exports = function(grunt) {
                 switch (reporter) {
                     case 'lcov':
                         data = reports.join('\n');
-                    break;
+                        break;
                 }
 
                 grunt.file.write(outputFile, data);
@@ -764,6 +783,7 @@ module.exports = function(grunt) {
 
     grunt.registerTask('build:joint', [
         'build:plugins',
+        'newer:uglify:polyfills',
         'newer:uglify:deps',
         'newer:uglify:geometry',
         'newer:uglify:vectorizer',
@@ -779,7 +799,7 @@ module.exports = function(grunt) {
 
     grunt.registerTask('build:bundles', [
         'newer:browserify',
-        'newer:webpack'
+        'webpack'
     ]);
 
     grunt.registerTask('build:docs', [
@@ -815,7 +835,11 @@ module.exports = function(grunt) {
         'shell:bowerInstall:.'
     ]);
 
-    grunt.registerTask('install', ['bowerInstall', 'build:all']);
+    grunt.registerTask('lodash4tests', [
+        'shell:lodash4testsInstall'
+    ]);
+
+    grunt.registerTask('install', ['lodash4tests', 'bowerInstall', 'build:all']);
     grunt.registerTask('default', ['install', 'build', 'watch']);
 
     var e2eBrowsers = {
@@ -887,7 +911,7 @@ module.exports = function(grunt) {
         'test:e2e:firefox-linux',
         'test:e2e:firefox-mac'
     ]);
-    
+
     grunt.registerTask('selenium', function(action) {
 
         var done = this.async();

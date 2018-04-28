@@ -57,6 +57,9 @@ joint.dia.Paper = joint.mvc.View.extend({
         // Prevent the default context menu from being displayed.
         preventContextMenu: true,
 
+        // Prevent the default action for blank:pointer<action>.
+        preventDefaultBlankAction: true,
+
         // Restrict the translation of elements by given bounding box.
         // Option accepts a boolean:
         //  true - the translation is restricted to the paper area
@@ -69,6 +72,7 @@ joint.dia.Paper = joint.mvc.View.extend({
         // Or a bounding box:
         // restrictTranslate: { x: 10, y: 10, width: 790, height: 590 }
         restrictTranslate: false,
+
         // Marks all available magnets with 'available-magnet' class name and all available cells with
         // 'available-cell' class name. Marks them when dragging a link is started and unmark
         // when the dragging is stopped.
@@ -87,7 +91,13 @@ joint.dia.Paper = joint.mvc.View.extend({
         // e.g. { name: 'oneSide', args: { padding: 10 }} or a function
         defaultRouter: { name: 'normal' },
 
+        defaultAnchor: { name: 'center' },
+
+        defaultConnectionPoint: { name: 'bbox' },
+
         /* CONNECTING */
+
+        connectionStrategy: null,
 
         // Check whether to add a new link to the graph when user clicks on an a magnet.
         validateMagnet: function(cellView, magnet) {
@@ -113,7 +123,7 @@ joint.dia.Paper = joint.mvc.View.extend({
         },
 
         // Determines the way how a cell finds a suitable parent when it's dragged over the paper.
-        // The cell with the highest z-index (visually on the top) will be choosen.
+        // The cell with the highest z-index (visually on the top) will be chosen.
         findParentBy: 'bbox', // 'bbox'|'center'|'origin'|'corner'|'topRight'|'bottomLeft'
 
         // If enabled only the element on the very front is taken into account for the embedding.
@@ -130,8 +140,16 @@ joint.dia.Paper = joint.mvc.View.extend({
         // i.e. link source/target can be a point e.g. link.get('source') ==> { x: 100, y: 100 };
         linkPinning: true,
 
+        // Custom validation after an interaction with a link ends.
+        // Recognizes a function. If `false` is returned, the link is disallowed (removed or reverted)
+        // (linkView, paper) => boolean
+        allowLink: null,
+
         // Allowed number of mousemove events after which the pointerclick event will be still triggered.
         clickThreshold: 0,
+
+        // Number of required mousemove events before the first pointermove event will be triggered.
+        moveThreshold: 0,
 
         // The namespace, where all the cell views are defined.
         cellViewNamespace: joint.shapes,
@@ -141,28 +159,44 @@ joint.dia.Paper = joint.mvc.View.extend({
     },
 
     events: {
-
-        'mousedown': 'pointerdown',
-        'dblclick': 'mousedblclick',
-        'click': 'mouseclick',
-        'touchstart': 'pointerdown',
-        'touchend': 'mouseclick',
-        'touchmove': 'pointermove',
-        'mousemove': 'pointermove',
-        'mouseover .joint-cell': 'cellMouseover',
-        'mouseout .joint-cell': 'cellMouseout',
+        'dblclick': 'pointerdblclick',
+        'click': 'pointerclick', // triggered alongside pointerdown and pointerup if no movement
+        'touchend': 'pointerclick', // triggered alongside pointerdown and pointerup if no movement
         'contextmenu': 'contextmenu',
+        'mousedown': 'pointerdown',
+        'touchstart': 'pointerdown',
+        'mouseover': 'mouseover',
+        'mouseout': 'mouseout',
+        'mouseenter': 'mouseenter',
+        'mouseleave': 'mouseleave',
         'mousewheel': 'mousewheel',
         'DOMMouseScroll': 'mousewheel',
-        'mouseenter .joint-cell': 'cellMouseenter',
-        'mouseleave .joint-cell': 'cellMouseleave'
+        'mouseenter .joint-cell': 'mouseenter',
+        'mouseleave .joint-cell': 'mouseleave',
+        'mouseenter .joint-tools': 'mouseenter',
+        'mouseleave .joint-tools': 'mouseleave',
+        'mousedown .joint-cell [event]': 'onevent', // interaction with cell with `event` attribute set
+        'touchstart .joint-cell [event]': 'onevent',
+        'mousedown .joint-cell [magnet]': 'onmagnet', // interaction with cell with `magnet` attribute set
+        'touchstart .joint-cell [magnet]': 'onmagnet',
+        'mousedown .joint-link .label': 'onlabel', // interaction with link label
+        'touchstart .joint-link .label': 'onlabel',
+        'dragstart .joint-cell image': 'onImageDragStart' // firefox fix
+    },
+
+    documentEvents: {
+        'mousemove': 'pointermove',
+        'touchmove': 'pointermove',
+        'mouseup': 'pointerup',
+        'touchend': 'pointerup',
+        'touchcancel': 'pointerup'
     },
 
     _highlights: {},
 
     init: function() {
 
-        _.bindAll(this, 'pointerup');
+        joint.util.bindAll(this, 'pointerup');
 
         var model = this.model = this.options.model || new joint.dia.Graph;
 
@@ -196,23 +230,14 @@ joint.dia.Paper = joint.mvc.View.extend({
         // This is a fix for the case where two papers share the same options.
         // Changing origin.x for one paper would change the value of origin.x for the other.
         // This prevents that behavior.
-        options.origin = _.clone(options.origin);
-        options.defaultConnector = _.clone(options.defaultConnector);
+        options.origin = joint.util.assign({}, options.origin);
+        options.defaultConnector = joint.util.assign({}, options.defaultConnector);
         // Return the default highlighting options into the user specified options.
-        options.highlighting = _.defaultsDeep(
+        options.highlighting = joint.util.defaultsDeep(
             {},
             options.highlighting,
             this.constructor.prototype.options.highlighting
         );
-    },
-
-    bindDocumentEvents: function() {
-        var eventNS = this.getEventNamespace();
-        this.$document.on('mouseup' + eventNS + ' touchend' + eventNS, this.pointerup);
-    },
-
-    unbindDocumentEvents: function() {
-        this.$document.off(this.getEventNamespace());
     },
 
     render: function() {
@@ -222,9 +247,10 @@ joint.dia.Paper = joint.mvc.View.extend({
         this.svg = V('svg').attr({ width: '100%', height: '100%' }).node;
         this.viewport = V('g').addClass(joint.util.addClassNamePrefix('viewport')).node;
         this.defs = V('defs').node;
-
+        this.tools = V('g').addClass(joint.util.addClassNamePrefix('tools-container')).node;
         // Append `<defs>` element to the SVG document. This is useful for filters and gradients.
-        V(this.svg).append([this.viewport, this.defs]);
+        // It's desired to have the defs defined before the viewport (e.g. to make a PDF document pick up defs properly).
+        V(this.svg).append([this.defs, this.viewport, this.tools]);
 
         this.$background = $('<div/>').addClass(joint.util.addClassNamePrefix('paper-background'));
         if (this.options.background) {
@@ -250,10 +276,13 @@ joint.dia.Paper = joint.mvc.View.extend({
         if (this._background) {
             this.updateBackgroundImage(this._background);
         }
+
+        return this;
     },
 
     // For storing the current transformation matrix (CTM) of the paper's viewport.
     _viewportMatrix: null,
+
     // For verifying whether the CTM is up-to-date. The viewport transform attribute
     // could have been manipulated directly.
     _viewportTransformString: null,
@@ -285,7 +314,10 @@ joint.dia.Paper = joint.mvc.View.extend({
 
         // Setter:
         ctm = V.createSVGMatrix(ctm);
-        V(viewport).transform(ctm, { absolute: true });
+        ctmString = V.matrixToTransformString(ctm);
+        viewport.setAttribute('transform', ctmString);
+        this.tools.setAttribute('transform', ctmString);
+
         this._viewportMatrix = ctm;
         this._viewportTransformString = viewport.getAttribute('transform');
 
@@ -297,15 +329,18 @@ joint.dia.Paper = joint.mvc.View.extend({
         return V.createSVGMatrix(this.viewport.getScreenCTM());
     },
 
+    _sortDelayingBatches: ['add', 'to-front', 'to-back'],
+
     _onSort: function() {
-        if (!this.model.hasActiveBatch('add')) {
+        if (!this.model.hasActiveBatch(this._sortDelayingBatches)) {
             this.sortViews();
         }
     },
 
     _onBatchStop: function(data) {
         var name = data && data.batchName;
-        if (name === 'add' && !this.model.hasActiveBatch('add')) {
+        if (this._sortDelayingBatches.includes(name) &&
+            !this.model.hasActiveBatch(this._sortDelayingBatches)) {
             this.sortViews();
         }
     },
@@ -314,7 +349,6 @@ joint.dia.Paper = joint.mvc.View.extend({
 
         //clean up all DOM elements/views to prevent memory leaks
         this.removeViews();
-        this.unbindDocumentEvents();
     },
 
     setDimensions: function(width, height) {
@@ -341,7 +375,7 @@ joint.dia.Paper = joint.mvc.View.extend({
     // the content visible.
     fitToContent: function(gridWidth, gridHeight, padding, opt) { // alternatively function(opt)
 
-        if (_.isObject(gridWidth)) {
+        if (joint.util.isObject(gridWidth)) {
             // first parameter is an option object
             opt = gridWidth;
             gridWidth = opt.gridWidth || 1;
@@ -359,7 +393,7 @@ joint.dia.Paper = joint.mvc.View.extend({
         padding = joint.util.normalizeSides(padding);
 
         // Calculate the paper size to accomodate all the graph's elements.
-        var bbox = V(this.viewport).bbox(true, this.svg);
+        var bbox = V(this.viewport).getBBox();
 
         var currentScale = this.scale();
         var currentTranslate = this.translate();
@@ -418,7 +452,7 @@ joint.dia.Paper = joint.mvc.View.extend({
 
         opt = opt || {};
 
-        _.defaults(opt, {
+        joint.util.defaults(opt, {
             padding: 0,
             preserveAspectRatio: true,
             scaleGrid: null,
@@ -490,6 +524,13 @@ joint.dia.Paper = joint.mvc.View.extend({
         this.translate(newOx, newOy);
     },
 
+    // Return the dimensions of the content area in local units (without transformations).
+    getContentArea: function() {
+
+        return V(this.viewport).getBBox();
+    },
+
+    // Return the dimensions of the content bbox in client units (as it appears on screen).
     getContentBBox: function() {
 
         var crect = this.viewport.getBoundingClientRect();
@@ -526,7 +567,7 @@ joint.dia.Paper = joint.mvc.View.extend({
 
         var restrictedArea;
 
-        if (_.isFunction(this.options.restrictTranslate)) {
+        if (joint.util.isFunction(this.options.restrictTranslate)) {
             // A method returning a bounding box
             restrictedArea = this.options.restrictTranslate.apply(this, arguments);
         } else if (this.options.restrictTranslate === true) {
@@ -581,7 +622,7 @@ joint.dia.Paper = joint.mvc.View.extend({
 
     onCellAdded: function(cell, graph, opt) {
 
-        if (this.options.async && opt.async !== false && _.isNumber(opt.position)) {
+        if (this.options.async && opt.async !== false && joint.util.isNumber(opt.position)) {
 
             this._asyncCells = this._asyncCells || [];
             this._asyncCells.push(cell);
@@ -620,11 +661,14 @@ joint.dia.Paper = joint.mvc.View.extend({
         view.paper = this;
         view.render();
 
+        return view;
+    },
+
+    onImageDragStart: function() {
         // This is the only way to prevent image dragging in Firefox that works.
         // Setting -moz-user-select: none, draggable="false" attribute or user-drag: none didn't help.
-        $(view.el).find('image').on('dragstart', function() { return false; });
 
-        return view;
+        return false;
     },
 
     beforeRenderViews: function(cells) {
@@ -660,7 +704,9 @@ joint.dia.Paper = joint.mvc.View.extend({
 
         } else {
 
-            _.each(cells, this.renderView, this);
+            for (var i = 0, n = cells.length; i < n; i++) {
+                this.renderView(cells[i]);
+            }
 
             // Sort the cells in the DOM manually as we might have changed the order they
             // were added to the DOM (see above).
@@ -677,12 +723,12 @@ joint.dia.Paper = joint.mvc.View.extend({
 
     removeViews: function() {
 
-        _.invoke(this._views, 'remove');
+        joint.util.invoke(this._views, 'remove');
 
         this._views = {};
     },
 
-    asyncBatchAdded: _.noop,
+    asyncBatchAdded: joint.util.noop,
 
     asyncRenderViews: function(cells, opt) {
 
@@ -691,7 +737,7 @@ joint.dia.Paper = joint.mvc.View.extend({
             var batchSize = (this.options.async && this.options.async.batchSize) || 50;
             var batchCells = cells.splice(0, batchSize);
 
-            _.each(batchCells, function(cell) {
+            batchCells.forEach(function(cell) {
 
                 // The cell has to be part of the graph.
                 // There is a chance in asynchronous rendering
@@ -829,7 +875,7 @@ joint.dia.Paper = joint.mvc.View.extend({
     // be a selector or a jQuery object.
     findView: function($el) {
 
-        var el = _.isString($el)
+        var el = joint.util.isString($el)
             ? this.viewport.querySelector($el)
             : $el instanceof $ ? $el[0] : $el;
 
@@ -844,10 +890,10 @@ joint.dia.Paper = joint.mvc.View.extend({
         return undefined;
     },
 
-    // Find a view for a model `cell`. `cell` can also be a string representing a model `id`.
+    // Find a view for a model `cell`. `cell` can also be a string or number representing a model `id`.
     findViewByModel: function(cell) {
 
-        var id = _.isString(cell) ? cell : cell.id;
+        var id = (joint.util.isString(cell) || joint.util.isNumber(cell)) ? cell : (cell && cell.id);
 
         return this._views[id];
     },
@@ -857,25 +903,40 @@ joint.dia.Paper = joint.mvc.View.extend({
 
         p = g.point(p);
 
-        var views = _.map(this.model.getElements(), this.findViewByModel, this);
+        var views = this.model.getElements().map(this.findViewByModel, this);
 
-        return _.filter(views, function(view) {
-            return view && g.rect(view.vel.bbox(false, this.viewport)).containsPoint(p);
+        return views.filter(function(view) {
+            return view && view.vel.getBBox({ target: this.viewport }).containsPoint(p);
         }, this);
     },
 
     // Find all views in given area
     findViewsInArea: function(rect, opt) {
 
-        opt = _.defaults(opt || {}, { strict: false });
+        opt = joint.util.defaults(opt || {}, { strict: false });
         rect = g.rect(rect);
 
-        var views = _.map(this.model.getElements(), this.findViewByModel, this);
+        var views = this.model.getElements().map(this.findViewByModel, this);
         var method = opt.strict ? 'containsRect' : 'intersect';
 
-        return _.filter(views, function(view) {
-            return view && rect[method](g.rect(view.vel.bbox(false, this.viewport)));
+        return views.filter(function(view) {
+            return view && rect[method](view.vel.getBBox({ target: this.viewport }));
         }, this);
+    },
+
+    removeTools: function() {
+        joint.dia.CellView.dispatchToolsEvent(this, 'remove');
+        return this;
+    },
+
+    hideTools: function() {
+        joint.dia.CellView.dispatchToolsEvent(this, 'hide');
+        return this;
+    },
+
+    showTools: function() {
+        joint.dia.CellView.dispatchToolsEvent(this, 'show');
+        return this;
     },
 
     getModelById: function(id) {
@@ -951,20 +1012,24 @@ joint.dia.Paper = joint.mvc.View.extend({
     },
 
     localToPagePoint: function(x, y) {
+
         return this.localToPaperPoint(x, y).offset(this.pageOffset());
     },
 
     localToPageRect: function(x, y, width, height) {
+
         return this.localToPaperRect(x, y, width, height).moveAndExpand(this.pageOffset());
     },
 
     pageToLocalPoint: function(x, y) {
+
         var pagePoint = g.Point(x, y);
         var paperPoint = pagePoint.difference(this.pageOffset());
         return this.paperToLocalPoint(paperPoint);
     },
 
     pageToLocalRect: function(x, y, width, height) {
+
         var pageOffset = this.pageOffset();
         var paperRect = g.Rect(x, y, width, height);
         paperRect.x -= pageOffset.x;
@@ -973,72 +1038,38 @@ joint.dia.Paper = joint.mvc.View.extend({
     },
 
     clientOffset: function() {
+
         var clientRect = this.svg.getBoundingClientRect();
         return g.Point(clientRect.left, clientRect.top);
     },
 
     pageOffset: function() {
+
         return this.clientOffset().offset(window.scrollX, window.scrollY);
     },
 
-    linkAllowed: function(linkViewOrModel) {
+    linkAllowed: function(linkView) {
 
-        var link;
-
-        if (linkViewOrModel instanceof joint.dia.Link) {
-            link = linkViewOrModel;
-        } else if (linkViewOrModel instanceof joint.dia.LinkView) {
-            link = linkViewOrModel.model;
-        } else {
-            throw new Error('Must provide link model or view.');
+        if (!(linkView instanceof joint.dia.LinkView)) {
+            throw new Error('Must provide a linkView.');
         }
 
-        if (!this.options.multiLinks) {
+        var link = linkView.model;
+        var paperOptions = this.options;
+        var graph = this.model;
+        var ns = graph.constructor.validations;
 
-            // Do not allow multiple links to have the same source and target.
-
-            var source = link.get('source');
-            var target = link.get('target');
-
-            if (source.id && target.id) {
-
-                var sourceModel = link.getSourceElement();
-
-                if (sourceModel) {
-
-                    var connectedLinks = this.model.getConnectedLinks(sourceModel, {
-                        outbound: true,
-                        inbound: false
-                    });
-
-                    var numSameLinks = _.filter(connectedLinks, function(_link) {
-
-                        var _source = _link.get('source');
-                        var _target = _link.get('target');
-
-                        return _source && _source.id === source.id &&
-                                (!_source.port || (_source.port === source.port)) &&
-                                _target && _target.id === target.id &&
-                                (!_target.port || (_target.port === target.port));
-
-                    }).length;
-
-                    if (numSameLinks > 1) {
-                        return false;
-                    }
-                }
-            }
+        if (!paperOptions.multiLinks) {
+            if (!ns.multiLinks.call(this, graph, link)) return false;
         }
 
-        if (
-            !this.options.linkPinning &&
-            (
-                !_.has(link.get('source'), 'id') ||
-                !_.has(link.get('target'), 'id')
-            )
-        ) {
+        if (!paperOptions.linkPinning) {
             // Link pinning is not allowed and the link is not connected to the target.
-            return false;
+            if (!ns.linkPinning.call(this, graph, link)) return false;
+        }
+
+        if (typeof paperOptions.allowLink === 'function') {
+            if (!paperOptions.allowLink.call(this, linkView, this)) return false;
         }
 
         return true;
@@ -1046,15 +1077,16 @@ joint.dia.Paper = joint.mvc.View.extend({
 
     getDefaultLink: function(cellView, magnet) {
 
-        return _.isFunction(this.options.defaultLink)
+        return joint.util.isFunction(this.options.defaultLink)
         // default link is a function producing link model
             ? this.options.defaultLink.call(this, cellView, magnet)
         // default link is the Backbone model
             : this.options.defaultLink.clone();
     },
 
-    // Cell highlighting
-    // -----------------
+    // Cell highlighting.
+    // ------------------
+
     resolveHighlighter: function(opt) {
 
         opt = opt || {};
@@ -1070,12 +1102,12 @@ joint.dia.Paper = joint.mvc.View.extend({
                 }
             }
         */
-        if (_.isUndefined(highlighterDef)) {
+        if (highlighterDef === undefined) {
 
             // check for built-in types
-            var type = _.chain(opt)
-                .pick('embedding', 'connecting', 'magnetAvailability', 'elementAvailability')
-                .keys().first().value();
+            var type = ['embedding', 'connecting', 'magnetAvailability', 'elementAvailability'].find(function(type) {
+                return !!opt[type];
+            });
 
             highlighterDef = (type && paperOpt.highlighting[type]) || paperOpt.highlighting['default'];
         }
@@ -1086,7 +1118,7 @@ joint.dia.Paper = joint.mvc.View.extend({
         if (!highlighterDef) return false;
 
         // Allow specifying a highlighter by name.
-        if (_.isString(highlighterDef)) {
+        if (joint.util.isString(highlighterDef)) {
             highlighterDef = {
                 name: highlighterDef
             };
@@ -1125,7 +1157,7 @@ joint.dia.Paper = joint.mvc.View.extend({
         if (!this._highlights[key]) {
 
             var highlighter = opt.highlighter;
-            highlighter.highlight(cellView, magnetEl, _.clone(opt.options));
+            highlighter.highlight(cellView, magnetEl, joint.util.assign({}, opt.options));
 
             this._highlights[key] = {
                 cellView: cellView,
@@ -1155,9 +1187,10 @@ joint.dia.Paper = joint.mvc.View.extend({
     // Interaction.
     // ------------
 
-    mousedblclick: function(evt) {
+    pointerdblclick: function(evt) {
 
         evt.preventDefault();
+
         evt = joint.util.normalizeEvent(evt);
 
         var view = this.findView(evt.target);
@@ -1166,18 +1199,16 @@ joint.dia.Paper = joint.mvc.View.extend({
         var localPoint = this.snapToGrid({ x: evt.clientX, y: evt.clientY });
 
         if (view) {
-
             view.pointerdblclick(evt, localPoint.x, localPoint.y);
 
         } else {
-
             this.trigger('blank:pointerdblclick', evt, localPoint.x, localPoint.y);
         }
     },
 
-    mouseclick: function(evt) {
+    pointerclick: function(evt) {
 
-        // Trigger event when mouse not moved.
+        // Trigger event only if mouse has not moved.
         if (this._mousemoved <= this.options.clickThreshold) {
 
             evt = joint.util.normalizeEvent(evt);
@@ -1188,25 +1219,252 @@ joint.dia.Paper = joint.mvc.View.extend({
             var localPoint = this.snapToGrid({ x: evt.clientX, y: evt.clientY });
 
             if (view) {
-
                 view.pointerclick(evt, localPoint.x, localPoint.y);
 
             } else {
-
                 this.trigger('blank:pointerclick', evt, localPoint.x, localPoint.y);
             }
         }
     },
 
-    // Guard guards the event received. If the event is not interesting, guard returns `true`.
-    // Otherwise, it return `false`.
+    contextmenu: function(evt) {
+
+        if (this.options.preventContextMenu) evt.preventDefault();
+
+        evt = joint.util.normalizeEvent(evt);
+
+        var view = this.findView(evt.target);
+        if (this.guard(evt, view)) return;
+
+        var localPoint = this.snapToGrid({ x: evt.clientX, y: evt.clientY });
+
+        if (view) {
+            view.contextmenu(evt, localPoint.x, localPoint.y);
+
+        } else {
+            this.trigger('blank:contextmenu', evt, localPoint.x, localPoint.y);
+        }
+    },
+
+    pointerdown: function(evt) {
+
+        evt = joint.util.normalizeEvent(evt);
+
+        var view = this.findView(evt.target);
+        if (this.guard(evt, view)) return;
+
+        var localPoint = this.snapToGrid({ x: evt.clientX, y: evt.clientY });
+
+        if (view) {
+
+            evt.preventDefault();
+            view.pointerdown(evt, localPoint.x, localPoint.y);
+
+        } else {
+
+            if (this.options.preventDefaultBlankAction) evt.preventDefault();
+
+            this.trigger('blank:pointerdown', evt, localPoint.x, localPoint.y);
+        }
+
+        this.delegateDragEvents(view, evt.data);
+    },
+
+    pointermove: function(evt) {
+
+        evt.preventDefault();
+
+        // mouse moved counter
+        var data = this.eventData(evt);
+        data.mousemoved || (data.mousemoved = 0);
+        var mousemoved = ++data.mousemoved;
+        if (mousemoved <= this.options.moveThreshold) return;
+
+        evt = joint.util.normalizeEvent(evt);
+
+        var localPoint = this.snapToGrid({ x: evt.clientX, y: evt.clientY });
+
+        var view = data.sourceView;
+        if (view) {
+            view.pointermove(evt, localPoint.x, localPoint.y);
+        } else {
+            this.trigger('blank:pointermove', evt, localPoint.x, localPoint.y);
+        }
+
+        this.eventData(evt, data);
+    },
+
+    pointerup: function(evt) {
+
+        this.undelegateDocumentEvents();
+
+        evt = joint.util.normalizeEvent(evt);
+
+        var localPoint = this.snapToGrid({ x: evt.clientX, y: evt.clientY });
+
+        var view = this.eventData(evt).sourceView;
+        if (view) {
+            view.pointerup(evt, localPoint.x, localPoint.y);
+        } else {
+            this.trigger('blank:pointerup', evt, localPoint.x, localPoint.y);
+        }
+
+        this.delegateEvents();
+    },
+
+    mouseover: function(evt) {
+
+        evt = joint.util.normalizeEvent(evt);
+
+        var view = this.findView(evt.target);
+        if (this.guard(evt, view)) return;
+
+        if (view) {
+            view.mouseover(evt);
+
+        } else {
+            if (this.el === evt.target) return; // prevent border of paper from triggering this
+            this.trigger('blank:mouseover', evt);
+        }
+    },
+
+    mouseout: function(evt) {
+
+        evt = joint.util.normalizeEvent(evt);
+
+        var view = this.findView(evt.target);
+        if (this.guard(evt, view)) return;
+
+        if (view) {
+            view.mouseout(evt);
+
+        } else {
+            if (this.el === evt.target) return; // prevent border of paper from triggering this
+            this.trigger('blank:mouseout', evt);
+        }
+    },
+
+    mouseenter: function(evt) {
+
+        evt = joint.util.normalizeEvent(evt);
+
+        var view = this.findView(evt.target);
+        if (this.guard(evt, view)) return;
+        var relatedView = this.findView(evt.relatedTarget);
+        if (view) {
+            // mouse moved from tool over view?
+            if (relatedView === view) return;
+            view.mouseenter(evt);
+        } else {
+            if (relatedView) return;
+            // `paper` (more descriptive), not `blank`
+            this.trigger('paper:mouseenter', evt);
+        }
+    },
+
+    mouseleave: function(evt) {
+
+        evt = joint.util.normalizeEvent(evt);
+
+        var view = this.findView(evt.target);
+        if (this.guard(evt, view)) return;
+        var relatedView = this.findView(evt.relatedTarget);
+        if (view) {
+            // mouse moved from view over tool?
+            if (relatedView === view) return;
+            view.mouseleave(evt);
+        } else {
+            if (relatedView) return;
+            // `paper` (more descriptive), not `blank`
+            this.trigger('paper:mouseleave', evt);
+        }
+    },
+
+    mousewheel: function(evt) {
+
+        evt = joint.util.normalizeEvent(evt);
+
+        var view = this.findView(evt.target);
+        if (this.guard(evt, view)) return;
+
+        var originalEvent = evt.originalEvent;
+        var localPoint = this.snapToGrid({ x: originalEvent.clientX, y: originalEvent.clientY });
+        var delta = Math.max(-1, Math.min(1, (originalEvent.wheelDelta || -originalEvent.detail)));
+
+        if (view) {
+            view.mousewheel(evt, localPoint.x, localPoint.y, delta);
+
+        } else {
+            this.trigger('blank:mousewheel', evt, localPoint.x, localPoint.y, delta);
+        }
+    },
+
+    onevent: function(evt) {
+
+        var eventNode = evt.currentTarget;
+        var eventName = eventNode.getAttribute('event');
+        if (eventName) {
+            var view = this.findView(eventNode);
+            if (view) {
+
+                evt = joint.util.normalizeEvent(evt);
+                if (this.guard(evt, view)) return;
+
+                var localPoint = this.snapToGrid({ x: evt.clientX, y: evt.clientY });
+                view.onevent(evt, eventName, localPoint.x, localPoint.y);
+            }
+        }
+    },
+
+    onmagnet: function(evt) {
+
+        var magnetNode = evt.currentTarget;
+        var magnetValue = magnetNode.getAttribute('magnet');
+        if (magnetValue) {
+            var view = this.findView(magnetNode);
+            if (view) {
+
+                evt = joint.util.normalizeEvent(evt);
+                if (this.guard(evt, view)) return;
+                if (!this.options.validateMagnet(view, magnetNode)) return;
+
+                var localPoint = this.snapToGrid(evt.clientX, evt.clientY);
+                view.onmagnet(evt, localPoint.x, localPoint.y);
+            }
+        }
+    },
+
+    onlabel: function(evt) {
+
+        var labelNode = evt.currentTarget;
+        var view = this.findView(labelNode);
+        if (view) {
+
+            evt = joint.util.normalizeEvent(evt);
+            if (this.guard(evt, view)) return;
+
+            var localPoint = this.snapToGrid(evt.clientX, evt.clientY);
+            view.onlabel(evt, localPoint.x, localPoint.y);
+        }
+    },
+
+    delegateDragEvents: function(view, data) {
+
+        data || (data = {});
+        this.eventData({ data: data }, { sourceView: view || null, mousemoved: 0 });
+        this.delegateDocumentEvents(null, data);
+        this.undelegateEvents();
+    },
+
+    // Guard the specified event. If the event is not interesting, guard returns `true`.
+    // Otherwise, it returns `false`.
     guard: function(evt, view) {
 
         if (this.options.guard && this.options.guard(evt, view)) {
             return true;
         }
 
-        if (evt.data && !_.isUndefined(evt.data.guarded)) {
+        if (evt.data && evt.data.guarded !== undefined) {
             return evt.data.guarded;
         }
 
@@ -1219,151 +1477,6 @@ joint.dia.Paper = joint.mvc.View.extend({
         }
 
         return true;    // Event guarded. Paper should not react on it in any way.
-    },
-
-    contextmenu: function(evt) {
-
-        evt = joint.util.normalizeEvent(evt);
-
-        if (this.options.preventContextMenu) {
-            evt.preventDefault();
-        }
-
-        var view = this.findView(evt.target);
-        if (this.guard(evt, view)) return;
-
-        var localPoint = this.snapToGrid({ x: evt.clientX, y: evt.clientY });
-
-        if (view) {
-
-            view.contextmenu(evt, localPoint.x, localPoint.y);
-
-        } else {
-
-            this.trigger('blank:contextmenu', evt, localPoint.x, localPoint.y);
-        }
-    },
-
-    pointerdown: function(evt) {
-
-        this.bindDocumentEvents();
-
-        evt = joint.util.normalizeEvent(evt);
-
-        var view = this.findView(evt.target);
-        if (this.guard(evt, view)) return;
-
-        evt.preventDefault();
-
-        this._mousemoved = 0;
-
-        var localPoint = this.snapToGrid({ x: evt.clientX, y: evt.clientY });
-
-        if (view) {
-
-            this.sourceView = view;
-
-            view.pointerdown(evt, localPoint.x, localPoint.y);
-
-        } else {
-
-            this.trigger('blank:pointerdown', evt, localPoint.x, localPoint.y);
-        }
-    },
-
-    pointermove: function(evt) {
-
-        if (this.sourceView) {
-
-            evt.preventDefault();
-            evt = joint.util.normalizeEvent(evt);
-
-            // Mouse moved counter.
-            this._mousemoved++;
-
-            var localPoint = this.snapToGrid({ x: evt.clientX, y: evt.clientY });
-
-            this.sourceView.pointermove(evt, localPoint.x, localPoint.y);
-        }
-    },
-
-    pointerup: function(evt) {
-
-        this.unbindDocumentEvents();
-
-        evt = joint.util.normalizeEvent(evt);
-
-        var localPoint = this.snapToGrid({ x: evt.clientX, y: evt.clientY });
-
-        if (this.sourceView) {
-
-            this.sourceView.pointerup(evt, localPoint.x, localPoint.y);
-
-            //"delete sourceView" occasionally throws an error in chrome (illegal access exception)
-            this.sourceView = null;
-
-        } else {
-
-            this.trigger('blank:pointerup', evt, localPoint.x, localPoint.y);
-        }
-    },
-
-    mousewheel: function(evt) {
-
-        evt = joint.util.normalizeEvent(evt);
-        var view = this.findView(evt.target);
-        if (this.guard(evt, view)) return;
-
-        var originalEvent = evt.originalEvent;
-        var localPoint = this.snapToGrid({ x: originalEvent.clientX, y: originalEvent.clientY });
-        var delta = Math.max(-1, Math.min(1, (originalEvent.wheelDelta || -originalEvent.detail)));
-
-        if (view) {
-
-            view.mousewheel(evt, localPoint.x, localPoint.y, delta);
-
-        } else {
-
-            this.trigger('blank:mousewheel', evt, localPoint.x, localPoint.y, delta);
-        }
-    },
-
-    cellMouseover: function(evt) {
-
-        evt = joint.util.normalizeEvent(evt);
-        var view = this.findView(evt.target);
-        if (view) {
-            if (this.guard(evt, view)) return;
-            view.mouseover(evt);
-        }
-    },
-
-    cellMouseout: function(evt) {
-
-        evt = joint.util.normalizeEvent(evt);
-        var view = this.findView(evt.target);
-        if (view) {
-            if (this.guard(evt, view)) return;
-            view.mouseout(evt);
-        }
-    },
-
-    cellMouseenter: function(evt) {
-
-        evt = joint.util.normalizeEvent(evt);
-        var view = this.findView(evt.target);
-        if (view && !this.guard(evt, view)) {
-            view.mouseenter(evt);
-        }
-    },
-
-    cellMouseleave: function(evt) {
-
-        evt = joint.util.normalizeEvent(evt);
-        var view = this.findView(evt.target);
-        if (view && !this.guard(evt, view)) {
-            view.mouseleave(evt);
-        }
     },
 
     setGridSize: function(gridSize) {
@@ -1385,22 +1498,22 @@ joint.dia.Paper = joint.mvc.View.extend({
         return this;
     },
 
-    _getGriRefs: function () {
+    _getGriRefs: function() {
 
         if (!this._gridCache) {
 
             this._gridCache = {
                 root: V('svg', { width: '100%', height: '100%' }, V('defs')),
                 patterns: {},
-                add: function (id, vel) {
+                add: function(id, vel) {
                     V(this.root.node.childNodes[0]).append(vel);
                     this.patterns[id] = vel;
                     this.root.append(V('rect', { width: "100%", height: "100%", fill: 'url(#' + id + ')' }));
                 },
-                get: function (id) {
+                get: function(id) {
                     return  this.patterns[id]
                 },
-                exist: function (id) {
+                exist: function(id) {
                     return this.patterns[id] !== undefined;
                 }
             }
@@ -1409,44 +1522,48 @@ joint.dia.Paper = joint.mvc.View.extend({
         return this._gridCache;
     },
 
-    setGrid:function (drawGrid) {
+    setGrid: function(drawGrid) {
 
         this.clearGrid();
 
         this._gridCache = null;
         this._gridSettings = [];
 
-        var optionsList = _.isArray(drawGrid) ? drawGrid : [drawGrid || {}];
-        _.each(optionsList, function (item) {
+        var optionsList = Array.isArray(drawGrid) ? drawGrid : [drawGrid || {}];
+        optionsList.forEach(function(item) {
             this._gridSettings.push.apply(this._gridSettings, this._resolveDrawGridOption(item));
         }, this);
         return this;
     },
 
-    _resolveDrawGridOption: function (opt) {
+    _resolveDrawGridOption: function(opt) {
 
         var namespace = this.constructor.gridPatterns;
-        if (_.isString(opt) && namespace[opt]) {
-            return _.map(namespace[opt], _.clone);
+        if (joint.util.isString(opt) && Array.isArray(namespace[opt])) {
+            return namespace[opt].map(function(item) {
+                return joint.util.assign({}, item);
+            });
         }
 
         var options = opt || { args: [{}] };
-        var isArray = _.isArray(options);
+        var isArray = Array.isArray(options);
         var name = options.name;
 
         if (!isArray && !name && !options.markup ) {
             name = 'dot';
         }
 
-        if (name && namespace[name]) {
-            var pattern = _.map(namespace[name], _.clone);
+        if (name && Array.isArray(namespace[name])) {
+            var pattern = namespace[name].map(function(item) {
+                return joint.util.assign({}, item);
+            });
 
-            var args = _.isArray(options.args) ? options.args : [options.args || {}];
+            var args = Array.isArray(options.args) ? options.args : [options.args || {}];
 
-            _.defaults(args[0], _.omit(opt, 'args'));
+            joint.util.defaults(args[0], joint.util.omit(opt, 'args'));
             for (var i = 0; i < args.length; i++) {
                 if (pattern[i]) {
-                    _.extend(pattern[i], args[i]);
+                    joint.util.assign(pattern[i], args[i]);
                 }
             }
             return pattern;
@@ -1462,15 +1579,15 @@ joint.dia.Paper = joint.mvc.View.extend({
             return this.clearGrid();
         }
 
-        var localOptions = _.isArray(opt) ? opt : [opt];
+        var localOptions = Array.isArray(opt) ? opt : [opt];
 
         var ctm = this.matrix();
         var refs = this._getGriRefs();
 
-        _.each(this._gridSettings, function (gridLayerSetting, index) {
+        this._gridSettings.forEach(function(gridLayerSetting, index) {
 
             var id = 'pattern_'  + index;
-            var options = _.merge(gridLayerSetting, localOptions[index], {
+            var options = joint.util.merge(gridLayerSetting, localOptions[index], {
                 sx: ctm.a || 1,
                 sy: ctm.d || 1,
                 ox: ctm.e || 0,
@@ -1481,12 +1598,12 @@ joint.dia.Paper = joint.mvc.View.extend({
             options.height = gridSize * (ctm.d || 1) * (options.scaleFactor || 1);
 
             if (!refs.exist(id)) {
-                refs.add(id, V('pattern', { id: id, patternUnits: 'userSpaceOnUse' }, V(options.markup)))
+                refs.add(id, V('pattern', { id: id, patternUnits: 'userSpaceOnUse' }, V(options.markup)));
             }
 
             var patternDefVel = refs.get(id);
 
-            if (_.isFunction(options.update)) {
+            if (joint.util.isFunction(options.update)) {
                 options.update(patternDefVel.node.childNodes[0], options);
             }
 
@@ -1523,14 +1640,14 @@ joint.dia.Paper = joint.mvc.View.extend({
         var currentTranslate = this.translate();
 
         // backgroundPosition
-        if (_.isObject(backgroundPosition)) {
+        if (joint.util.isObject(backgroundPosition)) {
             var x = currentTranslate.tx + (currentScale.sx * (backgroundPosition.x || 0));
             var y = currentTranslate.ty + (currentScale.sy * (backgroundPosition.y || 0));
             backgroundPosition = x + 'px ' + y + 'px';
         }
 
         // backgroundSize
-        if (_.isObject(backgroundSize)) {
+        if (joint.util.isObject(backgroundSize)) {
             backgroundSize = g.rect(backgroundSize).scale(currentScale.sx, currentScale.sy);
             backgroundSize = backgroundSize.width + 'px ' + backgroundSize.height + 'px';
         }
@@ -1556,9 +1673,9 @@ joint.dia.Paper = joint.mvc.View.extend({
         var backgroundRepeat = opt.repeat || 'no-repeat';
         var backgroundOpacity = opt.opacity || 1;
         var backgroundQuality = Math.abs(opt.quality) || 1;
-        var backgroundPattern = this.constructor.backgroundPatterns[_.camelCase(backgroundRepeat)];
+        var backgroundPattern = this.constructor.backgroundPatterns[joint.util.camelCase(backgroundRepeat)];
 
-        if (_.isFunction(backgroundPattern)) {
+        if (joint.util.isFunction(backgroundPattern)) {
             // 'flip-x', 'flip-y', 'flip-xy', 'watermark' and custom
             img.width *= backgroundQuality;
             img.height *= backgroundQuality;
@@ -1569,11 +1686,11 @@ joint.dia.Paper = joint.mvc.View.extend({
 
             backgroundImage = canvas.toDataURL('image/png');
             backgroundRepeat = 'repeat';
-            if (_.isObject(backgroundSize)) {
+            if (joint.util.isObject(backgroundSize)) {
                 // recalculate the tile size if an object passed in
                 backgroundSize.width *= canvas.width / img.width;
                 backgroundSize.height *= canvas.height / img.height;
-            } else if (_.isUndefined(backgroundSize)) {
+            } else if (backgroundSize === undefined) {
                 // calcule the tile size if no provided
                 opt.size = {
                     width: canvas.width / backgroundQuality,
@@ -1584,7 +1701,7 @@ joint.dia.Paper = joint.mvc.View.extend({
             // backgroundRepeat:
             // no-repeat', 'round', 'space', 'repeat', 'repeat-x', 'repeat-y'
             backgroundImage = img.src;
-            if (_.isUndefined(backgroundSize)) {
+            if (backgroundSize === undefined) {
                 // pass the image size for  the backgroundSize if no size provided
                 opt.size = {
                     width: img.width,
@@ -1614,9 +1731,9 @@ joint.dia.Paper = joint.mvc.View.extend({
         this.updateBackgroundColor(opt.color);
 
         if (opt.image) {
-            opt = this._background = _.cloneDeep(opt);
+            opt = this._background = joint.util.cloneDeep(opt);
             var img = document.createElement('img');
-            img.onload = _.bind(this.drawBackgroundImage, this, img, opt);
+            img.onload = this.drawBackgroundImage.bind(this, img, opt);
             img.src = opt.image;
         } else {
             this.drawBackgroundImage(null);
@@ -1630,18 +1747,20 @@ joint.dia.Paper = joint.mvc.View.extend({
 
         this.options.interactive = value;
 
-        _.invoke(this._views, 'setInteractivity', value);
+        joint.util.invoke(this._views, 'setInteractivity', value);
     },
 
-    // Paper Defs
+    // Paper definitions.
+    // ------------------
 
     isDefined: function(defId) {
+
         return !!this.svg.getElementById(defId);
     },
 
     defineFilter: function(filter) {
 
-        if (!_.isObject(filter)) {
+        if (!joint.util.isObject(filter)) {
             throw new TypeError('dia.Paper: defineFilter() requires 1. argument to be an object.');
         }
 
@@ -1665,7 +1784,7 @@ joint.dia.Paper = joint.mvc.View.extend({
 
             // Set the filter area to be 3x the bounding box of the cell
             // and center the filter around the cell.
-            var filterAttrs = _.extend({
+            var filterAttrs = joint.util.assign({
                 filterUnits: 'objectBoundingBox',
                 x: -1,
                 y: -1,
@@ -1683,7 +1802,7 @@ joint.dia.Paper = joint.mvc.View.extend({
 
     defineGradient: function(gradient) {
 
-        if (!_.isObject(gradient)) {
+        if (!joint.util.isObject(gradient)) {
             throw new TypeError('dia.Paper: defineGradient() requires 1. argument to be an object.');
         }
 
@@ -1701,11 +1820,11 @@ joint.dia.Paper = joint.mvc.View.extend({
         if (!this.isDefined(gradientId)) {
 
             var stopTemplate = joint.util.template('<stop offset="${offset}" stop-color="${color}" stop-opacity="${opacity}"/>');
-            var gradientStopsStrings = _.map(stops, function(stop) {
+            var gradientStopsStrings = joint.util.toArray(stops).map(function(stop) {
                 return stopTemplate({
                     offset: stop.offset,
                     color: stop.color,
-                    opacity: _.isFinite(stop.opacity) ? stop.opacity : 1
+                    opacity: Number.isFinite(stop.opacity) ? stop.opacity : 1
                 });
             });
 
@@ -1715,7 +1834,7 @@ joint.dia.Paper = joint.mvc.View.extend({
                 '</' + type + '>'
             ].join('');
 
-            var gradientAttrs = _.extend({ id: gradientId }, gradient.attrs);
+            var gradientAttrs = joint.util.assign({ id: gradientId }, gradient.attrs);
 
             V(gradientSVGString, gradientAttrs).appendTo(this.defs);
         }
@@ -1725,7 +1844,7 @@ joint.dia.Paper = joint.mvc.View.extend({
 
     defineMarker: function(marker) {
 
-        if (!_.isObject(marker)) {
+        if (!joint.util.isObject(marker)) {
             throw new TypeError('dia.Paper: defineMarker() requires 1. argument to be an object.');
         }
 
@@ -1739,7 +1858,7 @@ joint.dia.Paper = joint.mvc.View.extend({
 
         if (!this.isDefined(markerId)) {
 
-            var attrs = _.omit(marker, 'type', 'userSpaceOnUse');
+            var attrs = joint.util.omit(marker, 'type', 'userSpaceOnUse');
             var pathMarker = V('marker', {
                 id: markerId,
                 orient: 'auto',
@@ -1754,7 +1873,6 @@ joint.dia.Paper = joint.mvc.View.extend({
 
         return markerId;
     }
-
 }, {
 
     backgroundPatterns: {
@@ -1844,7 +1962,7 @@ joint.dia.Paper = joint.mvc.View.extend({
             canvas.height = imgHeight * 3;
 
             var ctx = canvas.getContext('2d');
-            var angle = _.isNumber(opt.watermarkAngle) ? -opt.watermarkAngle : -20;
+            var angle = joint.util.isNumber(opt.watermarkAngle) ? -opt.watermarkAngle : -20;
             var radians = g.toRad(angle);
             var stepX = canvas.width / 4;
             var stepY = canvas.height / 4;

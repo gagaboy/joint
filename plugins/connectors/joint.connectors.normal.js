@@ -1,14 +1,10 @@
-joint.connectors.normal = function(sourcePoint, targetPoint, vertices) {
+joint.connectors.normal = function(sourcePoint, targetPoint, route, opt) {
 
-    // Construct the `d` attribute of the `<path>` element.
-    var d = ['M', sourcePoint.x, sourcePoint.y];
+    var raw = opt && opt.raw;
+    var points = [sourcePoint].concat(route).concat([targetPoint]);
 
-    _.each(vertices, function(vertex) {
+    var polyline = new g.Polyline(points);
+    var path = new g.Path(polyline);
 
-        d.push(vertex.x, vertex.y);
-    });
-
-    d.push(targetPoint.x, targetPoint.y);
-
-    return d.join(' ');
+    return (raw) ? path : path.serialize();
 };

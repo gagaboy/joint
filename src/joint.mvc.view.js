@@ -6,80 +6,87 @@ joint.mvc.View = Backbone.View.extend({
     themeClassNamePrefix: joint.util.addClassNamePrefix('theme-'),
     requireSetThemeOverride: false,
     defaultTheme: joint.config.defaultTheme,
+    children: null,
+    childNodes: null,
 
     constructor: function(options) {
+
+        this.requireSetThemeOverride = options && !!options.theme;
+        this.options = joint.util.assign({}, this.options, options);
 
         Backbone.View.call(this, options);
     },
 
     initialize: function(options) {
 
-        this.requireSetThemeOverride = options && !!options.theme;
-
-        this.options = _.extend({}, this.options, options);
-
-        _.bindAll(this, 'setTheme', 'onSetTheme', 'remove', 'onRemove');
+        joint.util.bindAll(this, 'setTheme', 'onSetTheme', 'remove', 'onRemove');
 
         joint.mvc.views[this.cid] = this;
 
         this.setTheme(this.options.theme || this.defaultTheme);
-        this._ensureElClassName();
         this.init();
+    },
+
+    renderChildren: function(children) {
+        children || (children = this.children);
+        if (children) {
+            var namespace = V.namespace[this.svgElement ? 'xmlns' : 'xhtml'];
+            var doc = joint.util.parseDOMJSON(children, namespace);
+            this.vel.empty().append(doc.fragment);
+            this.childNodes = doc.selectors;
+        }
+        return this;
     },
 
     // Override the Backbone `_ensureElement()` method in order to create an
     // svg element (e.g., `<g>`) node that wraps all the nodes of the Cell view.
+    // Expose class name setter as a separate method.
     _ensureElement: function() {
-        var el;
-
-        if (this.svgElement) {
-
-            if (!this.el) {
-
-                var attrs = _.extend({ id: this.id }, _.result(this, 'attributes'));
-                if (this.className) attrs['class'] = _.result(this, 'className');
-                el = V(_.result(this, 'tagName'), attrs).node;
-
-            } else {
-
-                el = _.result(this, 'el');
-            }
-
-            this.setElement(el, false);
-
+        if (!this.el) {
+            var tagName = joint.util.result(this, 'tagName');
+            var attrs = joint.util.assign({}, joint.util.result(this, 'attributes'));
+            if (this.id) attrs.id = joint.util.result(this, 'id');
+            this.setElement(this._createElement(tagName));
+            this._setAttributes(attrs);
         } else {
-
-            Backbone.View.prototype._ensureElement.call(this);
-
+            this.setElement(joint.util.result(this, 'el'));
         }
+        this._ensureElClassName();
+    },
 
+    _setAttributes: function(attrs) {
+        if (this.svgElement) {
+            this.vel.attr(attrs);
+        } else {
+            this.$el.attr(attrs);
+        }
+    },
+
+    _createElement: function(tagName) {
+        if (this.svgElement) {
+            return document.createElementNS(V.namespace.xmlns, tagName);
+        } else {
+            return document.createElement(tagName);
+        }
     },
 
     // Utilize an alternative DOM manipulation API by
     // adding an element reference wrapped in Vectorizer.
     _setElement: function(el) {
-
-        if (this.svgElement) {
-
-            this.$el = el instanceof Backbone.$ ? el : Backbone.$(el);
-            this.el = this.$el[0];
-            this.vel = V(this.el);
-
-        } else {
-
-            Backbone.View.prototype._setElement.call(this, el);
-
-        }
-
+        this.$el = el instanceof Backbone.$ ? el : Backbone.$(el);
+        this.el = this.$el[0];
+        if (this.svgElement) this.vel = V(this.el);
     },
 
     _ensureElClassName: function() {
-
-        var className = _.result(this, 'className');
+        var className = joint.util.result(this, 'className');
         var prefixedClassName = joint.util.addClassNamePrefix(className);
-
-        this.$el.removeClass(className);
-        this.$el.addClass(prefixedClassName);
+        // Note: className removal here kept for backwards compatibility only
+        if (this.svgElement) {
+            this.vel.removeClass(className).addClass(prefixedClassName);
+        } else {
+            this.$el.removeClass(className).addClass(prefixedClassName);
+        }
     },
 
     init: function() {
@@ -116,7 +123,11 @@ joint.mvc.View = Backbone.View.extend({
 
         var className = this.themeClassNamePrefix + theme;
 
-        this.$el.addClass(className);
+        if (this.svgElement) {
+            this.vel.addClass(className);
+        } else {
+            this.$el.addClass(className);
+        }
 
         return this;
     },
@@ -127,7 +138,11 @@ joint.mvc.View = Backbone.View.extend({
 
         var className = this.themeClassNamePrefix + theme;
 
-        this.$el.removeClass(className);
+        if (this.svgElement) {
+            this.vel.removeClass(className);
+        } else {
+            this.$el.removeClass(className);
+        }
 
         return this;
     },
@@ -140,6 +155,7 @@ joint.mvc.View = Backbone.View.extend({
     remove: function() {
 
         this.onRemove();
+        this.undelegateDocumentEvents();
 
         joint.mvc.views[this.cid] = null;
 
@@ -156,18 +172,59 @@ joint.mvc.View = Backbone.View.extend({
     getEventNamespace: function() {
         // Returns a per-session unique namespace
         return '.joint-event-ns-' + this.cid;
+    },
+
+    delegateElementEvents: function(element, events, data) {
+        if (!events) return this;
+        data || (data = {});
+        var eventNS = this.getEventNamespace();
+        for (var eventName in events) {
+            var method = events[eventName];
+            if (typeof method !== 'function') method = this[method];
+            if (!method) continue;
+            $(element).on(eventName + eventNS, data, method.bind(this));
+        }
+        return this;
+    },
+
+    undelegateElementEvents: function(element) {
+        $(element).off(this.getEventNamespace());
+        return this;
+    },
+
+    delegateDocumentEvents: function(events, data) {
+        events || (events = joint.util.result(this, 'documentEvents'));
+        return this.delegateElementEvents(document, events, data);
+    },
+
+    undelegateDocumentEvents: function() {
+        return this.undelegateElementEvents(document);
+    },
+
+    eventData: function(evt, data) {
+        if (!evt) throw new Error('eventData(): event object required.');
+        var currentData = evt.data;
+        var key = '__' + this.cid + '__';
+        if (data === undefined) {
+            if (!currentData) return {};
+            return currentData[key] || {};
+        }
+        currentData || (currentData = evt.data = {});
+        currentData[key] || (currentData[key] = {});
+        joint.util.assign(currentData[key], data);
+        return this;
     }
 
 }, {
 
     extend: function() {
 
-        var args = Array.prototype.slice.call(arguments);
+        var args = Array.from(arguments);
 
         // Deep clone the prototype and static properties objects.
         // This prevents unexpected behavior where some properties are overwritten outside of this function.
-        var protoProps = args[0] && _.clone(args[0]) || {};
-        var staticProps = args[1] && _.clone(args[1]) || {};
+        var protoProps = args[0] && joint.util.assign({}, args[0]) || {};
+        var staticProps = args[1] && joint.util.assign({}, args[1]) || {};
 
         // Need the real render method so that we can wrap it and call it later.
         var renderFn = protoProps.render || (this.prototype && this.prototype.render) || null;

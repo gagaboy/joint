@@ -1,12 +1,8 @@
-(function(joint, _, g, $) {
-
-    function isPercentage(val) {
-        return _.isString(val) && val.slice(-1) === '%';
-    }
+(function(joint, V, g, $, util) {
 
     function setWrapper(attrName, dimension) {
         return function(value, refBBox) {
-            var isValuePercentage = isPercentage(value);
+            var isValuePercentage = util.isPercentage(value);
             value = parseFloat(value);
             if (isValuePercentage) {
                 value /= 100;
@@ -26,7 +22,7 @@
 
     function positionWrapper(axis, dimension, origin) {
         return function(value, refBBox) {
-            var valuePercentage = isPercentage(value);
+            var valuePercentage = util.isPercentage(value);
             value = parseFloat(value);
             if (valuePercentage) {
                 value /= 100;
@@ -58,7 +54,7 @@
             } else if (isFinite(value)) {
                 // TODO: or not to do a breaking change?
                 delta = (value > -1 && value < 1) ? (-nodeBBox[dimension] * value) : -value;
-            } else if (isPercentage(value)) {
+            } else if (util.isPercentage(value)) {
                 delta = nodeBBox[dimension] * parseFloat(value) / 100;
             } else {
                 delta = 0;
@@ -70,65 +66,233 @@
         };
     }
 
+    function shapeWrapper(shapeConstructor, opt) {
+        var cacheName = 'joint-shape';
+        var resetOffset = opt && opt.resetOffset;
+        return function(value, refBBox, node) {
+            var $node = $(node);
+            var cache = $node.data(cacheName);
+            if (!cache || cache.value !== value) {
+                // only recalculate if value has changed
+                var cachedShape = shapeConstructor(value);
+                cache = {
+                    value: value,
+                    shape: cachedShape,
+                    shapeBBox: cachedShape.bbox()
+                };
+                $node.data(cacheName, cache);
+            }
+
+            var shape = cache.shape.clone();
+            var shapeBBox = cache.shapeBBox.clone();
+            var shapeOrigin = shapeBBox.origin();
+            var refOrigin = refBBox.origin();
+
+            shapeBBox.x = refOrigin.x;
+            shapeBBox.y = refOrigin.y;
+
+            var fitScale = refBBox.maxRectScaleToFit(shapeBBox, refOrigin);
+            // `maxRectScaleToFit` can give Infinity if width or height is 0
+            var sx = (shapeBBox.width === 0 || refBBox.width === 0) ? 1 : fitScale.sx;
+            var sy = (shapeBBox.height === 0 || refBBox.height === 0) ? 1 : fitScale.sy;
+
+            shape.scale(sx, sy, shapeOrigin);
+            if (resetOffset) {
+                shape.translate(-shapeOrigin.x, -shapeOrigin.y);
+            }
+
+            return shape;
+        };
+    }
+
+    // `d` attribute for SVGPaths
+    function dWrapper(opt) {
+        function pathConstructor(value) {
+            return new g.Path(V.normalizePathData(value));
+        }
+        var shape = shapeWrapper(pathConstructor, opt);
+        return function(value, refBBox, node) {
+            var path = shape(value, refBBox, node);
+            return {
+                d: path.serialize()
+            };
+        };
+    }
+
+    // `points` attribute for SVGPolylines and SVGPolygons
+    function pointsWrapper(opt) {
+        var shape = shapeWrapper(g.Polyline, opt);
+        return function(value, refBBox, node) {
+            var polyline = shape(value, refBBox, node);
+            return {
+                points: polyline.serialize()
+            };
+        };
+    }
+
+    function atConnectionWrapper(method, opt) {
+        var zeroVector = new g.Point(1, 0);
+        return function(value) {
+            var p, angle;
+            var tangent = this[method](value);
+            if (tangent) {
+                angle = (opt.rotate) ? tangent.vector().vectorAngle(zeroVector) : 0;
+                p = tangent.start;
+            } else {
+                p = this.path.start;
+                angle = 0;
+            }
+            if (angle === 0) return { transform: 'translate(' + p.x + ',' + p.y + ')' };
+            return { transform: 'translate(' + p.x + ',' + p.y + ') rotate(' + angle + ')' };
+        }
+    }
+
+    function isTextInUse(lineHeight, node, attrs) {
+        return (attrs.text !== undefined);
+    }
+
+    function isLinkView() {
+        return this instanceof joint.dia.LinkView;
+    }
+
+    function contextMarker(context) {
+        var marker = {};
+        // Stroke
+        // The context 'fill' is disregared here. The usual case is to use the marker with a connection
+        // (for which 'fill' attribute is set to 'none').
+        var stroke = context.stroke;
+        if (typeof stroke === 'string') {
+            marker['stroke'] = stroke;
+            marker['fill'] = stroke;
+        }
+        // Opacity
+        // Again the context 'fill-opacity' is ignored.
+        var strokeOpacity = context.strokeOpacity;
+        if (strokeOpacity === undefined) strokeOpacity = context['stroke-opacity'];
+        if (strokeOpacity === undefined) strokeOpacity = context.opacity
+        if (strokeOpacity !== undefined) {
+            marker['stroke-opacity'] = strokeOpacity;
+            marker['fill-opacity'] = strokeOpacity;
+        }
+        return marker;
+    }
+
     var attributesNS = joint.dia.attributes = {
 
         xlinkHref: {
             set: 'xlink:href'
         },
 
+        xlinkShow: {
+            set: 'xlink:show'
+        },
+
+        xlinkRole: {
+            set: 'xlink:role'
+        },
+
+        xlinkType: {
+            set: 'xlink:type'
+        },
+
+        xlinkArcrole: {
+            set: 'xlink:arcrole'
+        },
+
+        xlinkTitle: {
+            set: 'xlink:title'
+        },
+
+        xlinkActuate: {
+            set: 'xlink:actuate'
+        },
+
         xmlSpace: {
             set: 'xml:space'
         },
 
+        xmlBase: {
+            set: 'xml:base'
+        },
+
+        xmlLang: {
+            set: 'xml:lang'
+        },
+
+        preserveAspectRatio: {
+            set: 'preserveAspectRatio'
+        },
+
+        requiredExtension: {
+            set: 'requiredExtension'
+        },
+
+        requiredFeatures: {
+            set: 'requiredFeatures'
+        },
+
+        systemLanguage: {
+            set: 'systemLanguage'
+        },
+
+        externalResourcesRequired: {
+            set: 'externalResourceRequired'
+        },
+
         filter: {
-            qualify: _.isPlainObject,
+            qualify: util.isPlainObject,
             set: function(filter) {
                 return 'url(#' + this.paper.defineFilter(filter) + ')';
             }
         },
 
         fill: {
-            qualify: _.isPlainObject,
+            qualify: util.isPlainObject,
             set: function(fill) {
                 return 'url(#' + this.paper.defineGradient(fill) + ')';
             }
         },
 
         stroke: {
-            qualify: _.isPlainObject,
+            qualify: util.isPlainObject,
             set: function(stroke) {
                 return 'url(#' + this.paper.defineGradient(stroke) + ')';
             }
         },
 
         sourceMarker: {
-            qualify: _.isPlainObject,
-            set: function(marker) {
+            qualify: util.isPlainObject,
+            set: function(marker, refBBox, node, attrs) {
+                marker = util.assign(contextMarker(attrs), marker);
                 return { 'marker-start': 'url(#' + this.paper.defineMarker(marker) + ')' };
             }
         },
 
         targetMarker: {
-            qualify: _.isPlainObject,
-            set: function(marker) {
-                marker = _.assign({ transform: 'rotate(180)' }, marker);
+            qualify: util.isPlainObject,
+            set: function(marker, refBBox, node, attrs) {
+                marker = util.assign(contextMarker(attrs), { 'transform': 'rotate(180)' }, marker);
                 return { 'marker-end': 'url(#' + this.paper.defineMarker(marker) + ')' };
             }
         },
 
         vertexMarker: {
-            qualify: _.isPlainObject,
-            set: function(marker) {
+            qualify: util.isPlainObject,
+            set: function(marker, refBBox, node, attrs) {
+                marker = util.assign(contextMarker(attrs), marker);
                 return { 'marker-mid': 'url(#' + this.paper.defineMarker(marker) + ')' };
             }
         },
 
         text: {
+            qualify: function(text, node, attrs) {
+                return !attrs.textWrap || !util.isPlainObject(attrs.textWrap);
+            },
             set: function(text, refBBox, node, attrs) {
                 var $node = $(node);
                 var cacheName = 'joint-text';
                 var cache = $node.data(cacheName);
-                var textAttrs = _.pick(attrs, 'lineHeight', 'annotations', 'textPath');
+                var textAttrs = joint.util.pick(attrs, 'lineHeight', 'annotations', 'textPath', 'x', 'textVerticalAnchor', 'eol');
                 var fontSize = textAttrs.fontSize = attrs['font-size'] || attrs['fontSize'];
                 var textHash = JSON.stringify([text, textAttrs]);
                 // Update the text only if there was a change in the string
@@ -137,8 +301,17 @@
                     // Chrome bug:
                     // Tspans positions defined as `em` are not updated
                     // when container `font-size` change.
-                    if (fontSize) {
-                        node.setAttribute('font-size', fontSize);
+                    if (fontSize) node.setAttribute('font-size', fontSize);
+                    // Text Along Path Selector
+                    var textPath = textAttrs.textPath;
+                    if (util.isObject(textPath)) {
+                        var pathSelector = textPath.selector;
+                        if (typeof pathSelector === 'string') {
+                            var pathNode = this.findBySelector(pathSelector)[0];
+                            if (pathNode instanceof SVGPathElement) {
+                                textAttrs.textPath = util.assign({ 'xlink:href': '#' + pathNode.id }, textPath);
+                            }
+                        }
                     }
                     V(node).text('' + text, textAttrs);
                     $node.data(cacheName, textHash);
@@ -147,11 +320,11 @@
         },
 
         textWrap: {
-            qualify: _.isPlainObject,
+            qualify: util.isPlainObject,
             set: function(value, refBBox, node, attrs) {
                 // option `width`
                 var width = value.width || 0;
-                if (isPercentage(width)) {
+                if (util.isPercentage(width)) {
                     refBBox.width *= parseFloat(width) / 100;
                 } else if (width <= 0) {
                     refBBox.width += width;
@@ -160,7 +333,7 @@
                 }
                 // option `height`
                 var height = value.height || 0;
-                if (isPercentage(height)) {
+                if (util.isPercentage(height)) {
                     refBBox.height *= parseFloat(height) / 100;
                 } else if (height <= 0) {
                     refBBox.height += height;
@@ -168,36 +341,64 @@
                     refBBox.height = height;
                 }
                 // option `text`
-                var wrappedText = joint.util.breakText('' + value.text, refBBox, {
-                    'font-weight': attrs['font-weight'] || attrs.fontWeight,
-                    'font-size': attrs['font-size'] || attrs.fontSize,
-                    'font-family': attrs['font-family'] || attrs.fontFamily
-                }, {
-                    // Provide an existing SVG Document here
-                    // instead of creating a temporary one over again.
-                    svgDocument: this.paper.svg
-                });
+                var text = value.text;
+                if (text === undefined) text = attr.text;
+                if (text !== undefined) {
+                    var wrappedText = joint.util.breakText('' + text, refBBox, {
+                        'font-weight': attrs['font-weight'] || attrs.fontWeight,
+                        'font-size': attrs['font-size'] || attrs.fontSize,
+                        'font-family': attrs['font-family'] || attrs.fontFamily,
+                        'lineHeight': attrs.lineHeight
+                    }, {
+                        // Provide an existing SVG Document here
+                        // instead of creating a temporary one over again.
+                        svgDocument: this.paper.svg
+                    });
+                }
+                joint.dia.attributes.text.set.call(this, wrappedText, refBBox, node, attrs);
+            }
+        },
 
-                V(node).text(wrappedText);
+        title: {
+            qualify: function(title, node) {
+                // HTMLElement title is specified via an attribute (i.e. not an element)
+                return node instanceof SVGElement;
+            },
+            set: function(title, refBBox, node) {
+                var $node = $(node);
+                var cacheName = 'joint-title';
+                var cache = $node.data(cacheName);
+                if (cache === undefined || cache !== title) {
+                    $node.data(cacheName, title);
+                    // Generally <title> element should be the first child element of its parent.
+                    var firstChild = node.firstChild;
+                    if (firstChild && firstChild.tagName.toUpperCase() === 'TITLE') {
+                        // Update an existing title
+                        firstChild.textContent = title;
+                    } else {
+                        // Create a new title
+                        var titleNode = document.createElementNS(node.namespaceURI, 'title');
+                        titleNode.textContent = title;
+                        node.insertBefore(titleNode, firstChild);
+                    }
+                }
             }
         },
 
         lineHeight: {
-            qualify: function(lineHeight, node, attrs) {
-                return (attrs.text !== undefined);
-            }
+            qualify: isTextInUse
+        },
+
+        textVerticalAnchor: {
+            qualify: isTextInUse
         },
 
         textPath: {
-            qualify: function(textPath, node, attrs) {
-                return (attrs.text !== undefined);
-            }
+            qualify: isTextInUse
         },
 
         annotations: {
-            qualify: function(annotations, node, attrs) {
-                return (attrs.text !== undefined);
-            }
+            qualify: isTextInUse
         },
 
         // `port` attribute contains the `id` of the port that the underlying magnet represents.
@@ -209,7 +410,7 @@
 
         // `style` attribute is special in the sense that it sets the CSS style of the subelement.
         style: {
-            qualify: _.isPlainObject,
+            qualify: util.isPlainObject,
             set: function(styles, refBBox, node) {
                 $(node).css(styles);
             }
@@ -270,6 +471,37 @@
             set: setWrapper('ry', 'height')
         },
 
+        refRInscribed: {
+            set: (function(attrName) {
+                var widthFn = setWrapper(attrName, 'width');
+                var heightFn = setWrapper(attrName, 'height');
+                return function(value, refBBox) {
+                    var fn = (refBBox.height > refBBox.width) ? widthFn : heightFn;
+                    return fn(value, refBBox);
+                }
+            })('r')
+        },
+
+        refRCircumscribed: {
+            set: function(value, refBBox) {
+                var isValuePercentage = util.isPercentage(value);
+                value = parseFloat(value);
+                if (isValuePercentage) {
+                    value /= 100;
+                }
+
+                var diagonalLength = Math.sqrt((refBBox.height * refBBox.height) + (refBBox.width * refBBox.width));
+
+                var rValue;
+                if (isFinite(value)) {
+                    if (isValuePercentage || value >= 0 && value <= 1) rValue = value * diagonalLength;
+                    else rValue = Math.max(value + diagonalLength, 0);
+                }
+
+                return { r: rValue };
+            }
+        },
+
         refCx: {
             set: setWrapper('cx', 'width')
         },
@@ -290,8 +522,69 @@
 
         yAlignment: {
             offset: offsetWrapper('y', 'height', 'bottom')
+        },
+
+        resetOffset: {
+            offset: function(val, nodeBBox) {
+                return (val)
+                    ? { x: -nodeBBox.x, y: -nodeBBox.y }
+                    : { x: 0, y: 0 };
+            }
+
+        },
+
+        refDResetOffset: {
+            set: dWrapper({ resetOffset: true })
+        },
+
+        refDKeepOffset: {
+            set: dWrapper({ resetOffset: false })
+        },
+
+        refPointsResetOffset: {
+            set: pointsWrapper({ resetOffset: true })
+        },
+
+        refPointsKeepOffset: {
+            set: pointsWrapper({ resetOffset: false })
+        },
+
+        // LinkView Attributes
+
+        connection: {
+            qualify: isLinkView,
+            set: function() {
+                return { d: this.getSerializedConnection() };
+            }
+        },
+
+        atConnectionLengthKeepGradient: {
+            qualify: isLinkView,
+            set: atConnectionWrapper('getTangentAtLength', { rotate: true })
+        },
+
+        atConnectionLengthIgnoreGradient: {
+            qualify: isLinkView,
+            set: atConnectionWrapper('getTangentAtLength', { rotate: false })
+        },
+
+        atConnectionRatioKeepGradient: {
+            qualify: isLinkView,
+            set: atConnectionWrapper('getTangentAtRatio', { rotate: true })
+        },
+
+        atConnectionRatioIgnoreGradient: {
+            qualify: isLinkView,
+            set: atConnectionWrapper('getTangentAtRatio', { rotate: false })
         }
     };
+
+    // Aliases
+    attributesNS.refR = attributesNS.refRInscribed;
+    attributesNS.refD = attributesNS.refDResetOffset;
+    attributesNS.refPoints = attributesNS.refPointsResetOffset;
+    attributesNS.atConnectionLength = attributesNS.atConnectionLengthKeepGradient;
+    attributesNS.atConnectionRatio = attributesNS.atConnectionRatioKeepGradient;
 
     // This allows to combine both absolute and relative positioning
     // refX: 50%, refX2: 20
@@ -308,4 +601,4 @@
     attributesNS['x-alignment'] = attributesNS.xAlignment;
     attributesNS['y-alignment'] = attributesNS.yAlignment;
 
-})(joint, _, g, $);
+})(joint, V, g, $, joint.util);

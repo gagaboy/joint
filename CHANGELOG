@@ -1,3 +1,78 @@
+27-4-2018 (v2.1.0)
+  * update Tutorials
+  * shapes.Standard - add new set of high-performance elements and links
+  * dia.LinkView - new flexible definitions based on geometric representation
+  * dia.LinkView - refactor event handlers
+  * dia.LinkView - introduce anchors, connectionPoints and connectionStrategy
+  * dia.LinkView - add getConnection(), getSerializedConnection(), getConnectionSubdivisions(), getPointAtRatio(), getTangentAtLength(), getTangentAtRatio() getClosestPoint() and getClosestPointLength()
+  * dia.LinkView - add getVertexIndex(), getLabelCoordinates()
+  * dia.Link - add vertex API
+  * dia.Link - add label API and allow define a default label
+  * dia.Link - add source(), target(), router(), connector()
+  * anchors - ready-to-use anchors (center, top, bottom, left, right, topLeft, topRight, bottomLeft, bottomRight, perpendicular, midSide)
+  * connectionPoints - ready-to-use connection points (anchor, bbox, rectangle, boundary),
+  * connectionStrategies - predefined connection strategies (defaulAnchor, pinAbsolute, pinRelative)
+  * dia.ElementView - allow element's rotation without rotatable group
+  * dia.ElementView - refactor event handlers
+  * dia.ElementView - apply vector-effect: non-scaling-stroke to nodes inside ths scalable group only
+  * dia.Element - add angle()
+  * dia.CellView - render markup from JSON (link, element, ports and labels)
+  * dia.Cell - avoid unnecessary z-index changes during toFront or toBack
+  * dia.ToolsView - set of tools for a link
+  * dia.ToolView - base class for a single link tool
+  * linkTools - ready-to-use tools (vertices, segments, anchor, arrowhead, boundary, remove button)
+  * dia.Paper - complete set of events
+  * dia.Paper - add allowLink option to revert/remove invalid links
+  * dia.Paper - add getContentArea()
+  * dia.Paper - findParentBy option can be defined as a function
+  * dia.Paper - consequitive pointerdown, pointermove and pointerup can share event data
+  * dia.Paper - fire pointerup event on touchcancel
+  * dia.Paper - improve preventing image dragging in FireFox
+  * dia.attributes - sourceMarker, targetMarker and vertextMarker receive default stroke, fill and opacity values from its context
+  * dia.attributes - add refRInscribed, refRCircumscribed, refD, refPoints, title, textVerticalAnchor attributes
+  * dia.attributes - add connection, atConnectionLength, atConnectionRatio
+  * routers.Manhattan - adaptive grid for pathfinding
+  * routers - supports anchors (don't necessary start and end in the center of the magnet)
+  * layout.DirectedGraph - prevent undesired input cells sorting
+  * Vectorizer - add toGeometryShape(), normalizePathData(), tagName() and id to prototype
+  * Vectorizer - add transformLine() and transformPolyline()
+  * Vectorizer - text() accepts textVerticalAnchor option
+  * Vectorizer - improve Kappa value
+  * Geometry - add Path and Curves
+  * Geometry - add Polyline bbox(), scale(), translate(), clone() and serialize()
+  * Geometry - implement intersections of line with various shapes
+  * Geometry - add Point lerp() for linear interpolation
+  * shapes.basic.TextBlock - sanitize text
+  * util - normalizeSides() validates input and accepts horizontal and vertical attributes
+  * util - add parseDOMJSON(), dataUriToBlob(), downloadBlob(), downloadDataUri() and isPercentage()
+
+15-11-2017 (v2.0.1)
+  * toggleFullscreen() - fix canceling fullscreen in an iframe
+  * dia.Link - fix default label font color (IE)
+  * dia.Cell - fix removeProp() on arrays
+  * dia.Graph - fromJSON() does not ignore dry option anymore
+
+23-10-2017 (v2.0.0)
+  * Typescript definitions refactored (breaking change of the release)
+  * JointJS now compatible with Lodash v4 (see `demo/lodash4` for instructions)
+  * Geometry - add Polyline with pointAtLength(), length(), closestPointLength(), closestPoint() and convexHull()
+  * Geometry - add cross(), dot(), squaredDistance(), closestPoint(), closestPointNormalizedLength(), vector(), vectorAngle(), angleBetween() to Point
+  * Vectorizer - add children() and getBBox()
+  * Vectorizer - fix parseTransformString() and matrixToTransformString()
+  * Vectorizer - make the text `y` coordinate based on the first line `line-height` in text()
+  * Vectorizer - add option to define the end-of-line character for text()
+  * layout.DirectedLayout - add ability to position labels
+  * layout.DirectedLayout - fix bug when the elements passed do not include their parents
+  * dia.Paper - add `clickThreshold`, `moveThreshold` and `preventDefaultBlankAction` options
+  * dia.Paper - add cancelRenderViews() for async mode
+  * dia.CellView - do not reset node's transform attribute if no transform applied update()
+  * dia.Element - position() can be called with { deep: true } option to set position of the embeds
+  * dia.attributes - `text` attribute takes `x` into account
+  * dia.attributes - add `event` for easier events handling on CellViews and `resetOffset` for paths to start at 0,0
+  * dia.LinkView - stop triggering link:connect/link:disconnnect when connection not allowed
+  * dia.LinkView - can sendToken() backwards
+  * highlighters.Stroke - fix for magnets inside scalable group and with zero width or height
+
 31-03-2017 (v1.1.0)
   * add TypeScript definitions
   * update jQuery v3.1.1
@@ -13,7 +88,7 @@
   * Vectorizer - add appendTo() method
   * Vectorizer - V(node); does not set automatically id on the node anymore
   * Vectorizer - text() with content doesn't set invalid display: null on node anymore
-  * Vectorizer - fix convertRectToPathData() for rounded rectangles 
+  * Vectorizer - fix convertRectToPathData() for rounded rectangles
   * dia.attributes - add namespace for defining custom attributes, allow camelCase attribute style
   * dia.attributes - new attributes `sourceMarker`, `targetMarker`, `vertexMarker`, `textWrap`, `refRx`, `refRy`, `refCx`, `refCy`, `refX2`, `refY2`
   * dia.attributes - improve `text` attribute performance on cellView update

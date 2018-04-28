@@ -36,7 +36,7 @@ joint.highlighters.stroke = {
         // Only highlight once.
         if (this._views[id]) return;
 
-        var options = _.defaults(opt || {}, this.defaultOptions);
+        var options = joint.util.defaults(opt || {}, this.defaultOptions);
 
         var magnetVel = V(magnetEl);
         var magnetBBox;
@@ -50,7 +50,7 @@ joint.highlighters.stroke = {
             // Failed to get path data from magnet element.
             // Draw a rectangle around the entire cell view instead.
             magnetBBox = magnetVel.bbox(true/* without transforms */);
-            pathData = V.rectToPath(_.extend({}, options, magnetBBox));
+            pathData = V.rectToPath(joint.util.assign({}, options, magnetBBox));
         }
 
         var highlightVel = V('path').attr({
@@ -60,19 +60,25 @@ joint.highlighters.stroke = {
             'fill': 'none'
         }).attr(options.attrs);
 
-        highlightVel.transform(cellView.el.getCTM().inverse());
-        highlightVel.transform(magnetEl.getCTM());
+        var highlightMatrix = magnetVel.getTransformToElement(cellView.el);
 
+        // Add padding to the highlight element.
         var padding = options.padding;
         if (padding) {
 
             magnetBBox || (magnetBBox = magnetVel.bbox(true));
-            // Add padding to the highlight element.
+
             var cx = magnetBBox.x + (magnetBBox.width / 2);
             var cy = magnetBBox.y + (magnetBBox.height / 2);
-            var sx = (magnetBBox.width + padding) / magnetBBox.width;
-            var sy = (magnetBBox.height + padding) / magnetBBox.height;
-            highlightVel.transform({
+
+            magnetBBox = V.transformRect(magnetBBox, highlightMatrix);
+
+            var width = Math.max(magnetBBox.width, 1);
+            var height = Math.max(magnetBBox.height, 1);
+            var sx = (width + padding) / width;
+            var sy = (height + padding) / height;
+
+            var paddingMatrix = V.createSVGMatrix({
                 a: sx,
                 b: 0,
                 c: 0,
@@ -80,7 +86,11 @@ joint.highlighters.stroke = {
                 e: cx - sx * cx,
                 f: cy - sy * cy
             });
+
+            highlightMatrix = highlightMatrix.multiply(paddingMatrix);
         }
+
+        highlightVel.transform(highlightMatrix);
 
         // joint.mvc.View will handle the theme class name and joint class name prefix.
         var highlightView = this._views[id] = new joint.mvc.View({
@@ -90,7 +100,7 @@ joint.highlighters.stroke = {
         });
 
         // Remove the highlight view when the cell is removed from the graph.
-        var removeHandler = _.bind(this.removeHighlighter, this, id);
+        var removeHandler = this.removeHighlighter.bind(this, id);
         var cell = cellView.model;
         highlightView.listenTo(cell, 'remove', removeHandler);
         highlightView.listenTo(cell.graph, 'reset', removeHandler);
